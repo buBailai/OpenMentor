@@ -2,6 +2,28 @@
 
 > 面向老师的安装指南。即使你不会编程也可以按步骤完成。
 
+## 零、推荐：用 AI Agent 辅助一键部署（最省心）
+
+如果你不熟悉 Python / 终端命令，可以让 AI Agent 帮你完成全部安装和启动工作：
+
+1. 从 [GitHub Releases](https://github.com/buBailai/OpenMentor/releases) 下载最新版 zip 并解压到任意安装盘下，例如：
+   - Windows：`D:\OpenMentor`
+   - macOS：`~/Documents/OpenMentor`
+   - Linux：`~/OpenMentor`
+2. 打开任意一款支持终端 / 命令执行的 AI Agent 客户端，例如：
+   - **Cherry Studio**（开源跨平台 AI 客户端）
+   - **Trae**（字节）
+   - **Claude Code**（Anthropic）
+   - **OpenClaw**
+3. 把解压后的项目路径告诉 Agent，对它说 **"帮我启动这个项目"**
+4. Agent 会自动检查 Python 环境 → 缺啥装啥 → 创建虚拟环境 → 安装依赖 → 启动服务 → 把访问 URL 给你
+
+整个过程你只需要等几分钟。如果遇到错误，Agent 也能帮你排查。
+
+> 想了解每一步细节、或者想完全手动控制，仍可继续看下面完整步骤。
+
+---
+
 ## 一、准备 Python 环境（5 分钟）
 
 ### Windows 用户

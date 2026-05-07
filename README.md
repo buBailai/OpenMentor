@@ -33,6 +33,17 @@ OpenMentor 是基于 [QuickForm 2.0](https://github.com/wstlab/quickform) 二次
 
 ## 🚀 快速开始
 
+### 推荐：让 AI Agent 帮你装（最省心）
+
+如果你不会用终端命令，可以让 AI Agent 全程代劳：
+
+1. 从 [Releases](https://github.com/buBailai/OpenMentor/releases) 下载最新 zip 解压到任意目录
+2. 打开 **Cherry Studio / Trae / Claude Code / OpenClaw** 等支持终端调用的 AI Agent 客户端
+3. 把项目路径告诉 Agent，对它说 **"帮我启动这个项目"**
+4. Agent 会自动检查 Python 环境、创建虚拟环境、安装依赖、启动服务、给你访问 URL
+
+### 手动安装
+
 ```bash
 # 1. 克隆仓库
 git clone https://github.com/buBailai/OpenMentor.git
