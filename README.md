@@ -155,3 +155,9 @@ OpenMentor 站在 QuickForm 的肩膀上。特别致谢：
 - OpenMentor 新增部分版权：Copyright © 2026 厦门市演武小学 信息中心 白鹭辉
 
 详见 [NOTICE.md](./NOTICE.md)。
+
+## ⭐ Star 趋势
+
+[![Star History Chart](https://api.star-history.com/svg?repos=buBailai/OpenMentor&type=Date)](https://star-history.com/#buBailai/OpenMentor&Date)
+
+> 如果 OpenMentor 帮到了你，欢迎点个 ⭐ Star 让更多老师看到。
