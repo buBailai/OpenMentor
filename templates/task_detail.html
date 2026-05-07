@@ -1,0 +1,415 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ task.title }} - {{ get_app_name() }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+            <h2 class="mb-0">{{ task.title }}</h2>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <a href="{{ url_for('export_data', task_id=task.id) }}" class="btn" style="background-color: #5B7553; color: white; font-weight: 500; border-radius: 8px; padding: 0.75rem 1.5rem; transition: all 0.3s ease;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-download" viewBox="0 0 16 16">
+                        <path d="M8 4a.5.5 0 0 1 .5.5v8a.5.5 0 0 1-1 0v-8A.5.5 0 0 1 8 4z"/>
+                        <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zM1.5 8a6.5 6.5 0 1 1 13 0 6.5 6.5 0 0 1-13 0z"/>
+                    </svg>
+                    导出数据
+                </a>
+                <a href="{{ url_for('smart_analyze', task_id=task.id) }}" class="btn" style="font-weight: 500; border-radius: 8px; padding: 0.75rem 1.5rem; transition: all 0.3s ease;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-bar-chart2" viewBox="0 0 16 16">
+                        <path d="M1 3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V3zm5 2v8h2V5H6zm4 0v8h2V5h-2zm4 0v8h2V5h-2z"/>
+                    </svg>
+                    数据分析
+                </a>
+                <a href="{{ url_for('edit_task', task_id=task.id) }}" class="btn" style="font-weight: 500; border-radius: 8px; padding: 0.75rem 1.5rem; transition: all 0.3s ease;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-pencil" viewBox="0 0 16 16">
+                        <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/>
+                    </svg>
+                    编辑任务
+                </a>
+                <a href="{{ url_for('dashboard') }}" class="btn" style="background-color: #6B6760; color: white; font-weight: 500; border-radius: 8px; padding: 0.75rem 1.5rem; transition: all 0.3s ease;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-arrow-left" viewBox="0 0 16 16">
+                        <path d="M5.854 7.854a.5.5 0 0 0 .708 0l2-2a.5.5 0 0 0-.708-.708l-2 2a.5.5 0 0 0 0 .708zm-2.5 0a.5.5 0 0 1 0-.708l2-2a.5.5 0 0 1 .708.708L5.56 7.5H14a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5H5.56l1.293 1.293a.5.5 0 0 1-.708.708l-2-2z"/>
+                    </svg>
+                    返回列表
+                </a>
+            </div>
+        </div>
+        
+        <!-- 任务信息卡片 -->
+        <div class="card mb-4 border-0 shadow-sm" style="border-radius: 10px; overflow: hidden;">
+            <div class="card-header">
+                <h5 class="mb-0" style="font-weight: 600;">任务信息</h5>
+            </div>
+            <div class="card-body" style="padding: 2rem;">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <p class="mb-2"><strong>创建时间：</strong>{{ task.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+                        <p class="mb-0"><strong>提交数量：</strong>{{ submission|length }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <strong class="d-block mb-2">提交URL：</strong>
+                            <div class="input-group">
+                                <input type="text" class="form-control" readonly value="{{ request.host_url }}api/{{ task.task_id }}" id="task-url" style="border-radius: 8px;">
+                                <button class="btn" style="background-color: #F7F4EC; color: #2D2A24; font-weight: 500; border-radius: 8px;" onclick="copyToClipboard('task-url')">复制</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% if task.description %}
+                <div class="mt-4">
+                    <strong class="d-block mb-2">任务描述：</strong>
+                    <p style="color: #6B6760;">{{ task.description }}</p>
+                </div>
+                {% endif %}
+                
+                <div class="mt-4">
+                    <strong class="d-block mb-2">已上传文件（{{ task.attachments|length }}个）：</strong>
+                    {% if task.attachments %}
+                    {% for attachment in task.attachments %}
+                    <div class="d-inline-flex align-items-center me-2 mb-2">
+                        <a href="/static/uploads/{{ attachment.file_path.split('/')[-1].split('\\')[-1] }}" target="_blank" class="btn" style="font-weight: 500; border-radius: 8px 0 0 8px; padding: 0.5rem 1rem; transition: all 0.3s ease;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-file-earmark" viewBox="0 0 16 16">
+                                <path d="M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5L14 4.5zm-3-2A1.5 1.5 0 0 1 9.5 0H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4.5a1.5 1.5 0 0 1-1.5 1.5H11a1.5 1.5 0 0 1-1.5-1.5z"/>
+                            </svg>
+                            {{ attachment.file_name }}
+                        </a>
+                        <button type="button" class="btn qr-btn" style="background-color: #5B7553; color: white; border-radius: 0 8px 8px 0; padding: 0.5rem 0.75rem;" data-path="/static/uploads/{{ attachment.file_path.split('/')[-1].split('\\')[-1] }}" title="生成二维码">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" style="display: block;">
+                                    <rect x="1" y="1" width="5" height="5" rx="0.5" fill="currentColor"/>
+                                    <rect x="2" y="2" width="3" height="3" rx="0.25" fill="white"/>
+                                    <rect x="2.5" y="2.5" width="2" height="2" rx="0.25" fill="currentColor"/>
+                                    <rect x="10" y="1" width="5" height="5" rx="0.5" fill="currentColor"/>
+                                    <rect x="11" y="2" width="3" height="3" rx="0.25" fill="white"/>
+                                    <rect x="11.5" y="2.5" width="2" height="2" rx="0.25" fill="currentColor"/>
+                                    <rect x="1" y="10" width="5" height="5" rx="0.5" fill="currentColor"/>
+                                    <rect x="2" y="11" width="3" height="3" rx="0.25" fill="white"/>
+                                    <rect x="2.5" y="11.5" width="2" height="2" rx="0.25" fill="currentColor"/>
+                                    <rect x="7" y="1" width="2" height="2" fill="currentColor"/>
+                                    <rect x="10" y="10" width="2" height="2" fill="currentColor"/>
+                                    <rect x="7" y="4" width="1" height="1" fill="currentColor"/>
+                                    <rect x="8" y="5" width="1" height="1" fill="currentColor"/>
+                                    <rect x="9" y="6" width="1" height="1" fill="currentColor"/>
+                                    <rect x="10" y="7" width="1" height="1" fill="currentColor"/>
+                                    <rect x="7" y="8" width="1" height="1" fill="currentColor"/>
+                                    <rect x="8" y="9" width="1" height="1" fill="currentColor"/>
+                                    <rect x="12" y="8" width="1" height="1" fill="currentColor"/>
+                                    <rect x="13" y="9" width="1" height="1" fill="currentColor"/>
+                                    <rect x="14" y="10" width="1" height="1" fill="currentColor"/>
+                                </svg>
+                        </button>
+                    </div>
+                    {% endfor %}
+                    {% endif %}
+                    
+                    <div class="mt-3">
+                        <form id="uploadForm" enctype="multipart/form-data" style="display: flex; align-items: center; gap: 10px;">
+                            <input type="file" class="form-control" id="attachmentFile" name="file" accept=".pdf,.html,.htm,.jpg,.zip" style="flex: 1; border-radius: 8px;">
+                            <button type="submit" class="btn" style="background-color: #5B7553; color: white; font-weight: 500; border-radius: 8px; padding: 0.5rem 1rem; white-space: nowrap;">
+                                <i class="bi bi-upload"></i> 上传文件
+                            </button>
+                        </form>
+                        <div id="uploadStatus" class="mt-2" style="display: none;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 提交代码提示词 -->
+        <div class="card mb-4 border-0 shadow-sm" style="border-radius: 10px; overflow: hidden;">
+            <div class="card-header">
+                <h5 class="mb-0" style="font-weight: 600;">数据提交说明</h5>
+            </div>
+            <div class="card-body" style="padding: 2rem;">
+                <div class="mb-4">
+                    <strong class="d-block mb-2">参考提示词（点击复制）：</strong>
+                    <div class="input-group">
+                        <input type="text" class="form-control" readonly value="创建完应用后，以POST方式向 '{{ request.host_url }}api/{{ task.task_id }}' 发送数据" id="simple-instruction" style="border-radius: 8px;">
+                        <button class="btn" style="background-color: #F7F4EC; color: #2D2A24; font-weight: 500; border-radius: 8px;" onclick="copyToClipboard('simple-instruction')">复制</button>
+                    </div>
+                </div>
+                
+                <div class="mb-4">
+                    <strong class="d-block mb-2">💡 数据接口（API）说明：</strong>
+                    <span style="color: #6B6760;">访问下方 URL，即GET方式即可查看已收集的数据；制作实时统计页面时可向大模型提供该 URL 及数据样例。<br>点击这里<a href="{{ request.host_url }}api/{{ task.task_id }}" target="_blank">{{ request.host_url }}api/{{ task.task_id }}</a>可以看到全部已经回收的数据。</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 提交数据列表 -->
+        <div class="card border-0 shadow-sm" style="border-radius: 10px; overflow: hidden;">
+            <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0" style="font-weight: 600;">提交数据列表</h5>
+                    <a href="{{ url_for('task_data_view', task_id=task.id) }}" style="color: white; text-decoration: none;"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-eye" viewBox="0 0 16 16" style="vertical-align: middle; margin-right: 4px;"><path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8zM1.173 8a13.133 13.133 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.133 13.133 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5c-2.12 0-3.879-1.168-5.168-2.457A13.134 13.134 0 0 1 1.172 8z"/><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0z"/></svg>查看实时数据</a>
+                </div>
+            </div>
+            <div class="card-body" style="padding: 2rem;">
+                {% if submission %}
+                <div class="table-responsive">
+                    <table class="table table-striped" style="border-radius: 8px; overflow: hidden;">
+                        <thead style="background-color: #F7F4EC;">
+                            <tr>
+                                <th style="font-weight: 600; color: #2D2A24;">
+                                    <input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)">
+                                </th>
+                                <th style="font-weight: 600; color: #2D2A24;">ID</th>
+                                <th style="font-weight: 600; color: #2D2A24;">提交时间</th>
+                                <th style="font-weight: 600; color: #2D2A24;">数据内容</th>
+                                <th style="font-weight: 600; color: #2D2A24; width: 120px;">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for sub in submission %}
+                            <tr>
+                                <td>
+                                    <input type="checkbox" name="submission_ids" value="{{ sub.id }}">
+                                </td>
+                                <td>{{ sub.id }}</td>
+                                <td>{{ sub.submitted_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                <td>
+                                    <button type="button" class="btn" style="font-weight: 500; border-radius: 8px; padding: 0.5rem 1rem; transition: all 0.3s ease;" onclick="showModal('dataModal-{{ sub.id }}');">
+                                        查看数据
+                                    </button>
+                                </td>
+                                <td>
+                                    <form action="{{ url_for('delete_submission', submission_id=sub.id) }}" method="POST" style="display:inline;" onsubmit="return confirmDelete();">
+                                        <button type="submit" class="btn" style="background-color: #B8463E; color: white; font-weight: 500; border-radius: 8px; padding: 0.5rem 1rem; transition: all 0.3s ease;">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-trash" viewBox="0 0 16 16">
+                                                <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
+                                                <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3h11V2h-11z"/>
+                                            </svg>
+                                            删除
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            
+                            <!-- 自定义数据详情模态框 -->
+                            <div id="dataModal-{{ sub.id }}" class="modal" tabindex="-1" aria-labelledby="dataModalLabel-{{ sub.id }}" aria-hidden="true" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1050; background-color: rgba(0,0,0,0.5);" onclick="if(event.target===this) closeModal('dataModal-{{ sub.id }}');">
+                                <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90%; max-width: 900px; max-height: 90vh; display: flex; flex-direction: column; background: white; border-radius: 10px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);">
+                                    <div style="padding: 15px 20px; border-bottom: 1px solid #E5E0D8; background-color: #F7F4EC; border-radius: 10px 10px 0 0; display: flex; justify-content: space-between; align-items: center;">
+                                        <h5 style="margin: 0; font-size: 16px; font-weight: 600; color: #141413;">提交数据详情 #{{ sub.id }}</h5>
+                                        <button type="button" onclick="closeModal('dataModal-{{ sub.id }}');" aria-label="Close" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #6B6760;">&times;</button>
+                                    </div>
+                                    <div style="padding: 20px; flex-grow: 1; overflow-y: auto;">
+                                        <p style="margin: 0 0 12px 0; font-size: 14px; color: #6B6760;"><strong>提交时间：</strong>{{ sub.submitted_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+                                        <h6 style="margin: 0 0 10px 0; font-size: 14px; font-weight: 600; color: #141413;">数据内容：</h6>
+                                        <pre style="font-size: 16px; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; margin: 0; min-height: 300px; background-color: #F7F4EC; border: 1px solid #E5E0D8; padding: 12px; border-radius: 6px; font-family: 'Courier New', monospace;">{{ sub.data }}</pre>
+                                    </div>
+                                    <div style="padding: 15px 20px; border-top: 1px solid #E5E0D8; background-color: #F7F4EC; border-radius: 0 0 10px 10px; text-align: right;">
+                                        <button type="button" class="btn" style="background-color: #F7F4EC; color: #2D2A24; font-weight: 500; border-radius: 8px; padding: 0.5rem 1rem;" onclick="closeModal('dataModal-{{ sub.id }}');">关闭</button>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- 批量操作 -->
+                <div class="mt-4">
+                    <button type="button" class="btn" style="background-color: #B8463E; color: white; font-weight: 500; border-radius: 8px; padding: 0.75rem 1.5rem; transition: all 0.3s ease;" onclick="deleteSelectedSubmissions()">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-trash" viewBox="0 0 16 16">
+                            <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
+                            <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3h11V2h-11z"/>
+                        </svg>
+                        批量删除选中项
+                    </button>
+                    
+                    <form id="bulkDeleteForm" action="{{ url_for('delete_multiple_submissions', task_id=task.id) }}" method="POST" style="display:none;">
+                        <!-- 表单内容将通过JavaScript动态填充 -->
+                    </form>
+                </div>
+                
+                <!-- 分页 -->
+                <div class="mt-4">
+                    <p class="text-center" style="color: #6B6760;">共 {{ submission|length }} 条记录</p>
+                </div>
+                {% else %}
+                <div class="text-center py-5">
+                    <div class="mb-4" style="width: 48px; height: 48px; margin: 0 auto;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="#6B6760" class="bi bi-database" viewBox="0 0 16 16">
+                            <path d="M4.406 1.342A5.53 5.53 0 0 1 8 0c2.69 0 4.923 2 5.166 4.579C14.758 4.804 16 6.137 16 7.773 16 9.569 14.502 11 12.687 11H10a.5.5 0 0 1 0-1h2.688C13.979 10 15 8.988 15 7.773c0-1.216-1.02-2.228-2.313-2.228h-.5v-.5C12.188 2.825 10.328 1 8 1a4.53 4.53 0 0 0-2.941 1.1c-.757.652-1.153 1.438-1.153 2.055v.448l-.445.049C2.064 4.805 1 5.952 1 7.318 1 8.785 2.23 10 3.781 10H6a.5.5 0 0 1 0 1H3.781C1.708 11 0 9.366 0 7.318c0-1.763 1.266-3.223 2.942-3.593.143-.863.698-1.723 1.464-2.383z"/>
+                            <path d="M6.5 16a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-1H6.5v1zm-2-1a.5.5 0 0 0 .5.5h7a.5.5 0 0 0 .5-.5v-1H4.5v1z"/>
+                        </svg>
+                    </div>
+                    <h4 class="text-muted mb-3">暂无提交数据</h4>
+                    <p class="text-muted mb-0">当用户通过表单提交数据后，将在这里显示</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 二维码显示模态框 -->
+<div id="qrcodeModal" class="modal" tabindex="-1" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1050; background-color: rgba(0,0,0,0.5);">
+    <div style="width: 90%; max-width: 300px; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border-radius: 10px; padding: 20px; text-align: center;">
+        <h5 style="margin-bottom: 15px; font-weight: 600; color: #141413;">扫描二维码</h5>
+        <div id="qrcodeContainer" style="margin: 0 auto 15px; width: 200px; height: 200px; position: relative;"></div>
+        <button type="button" class="btn" style="background-color: #6B6760; color: white; font-weight: 500; border-radius: 8px; padding: 0.5rem 1rem;" onclick="closeQRCode()">关闭</button>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function copyToClipboard(elementId) {
+        const element = document.getElementById(elementId);
+        element.select();
+        element.setSelectionRange(0, 99999);
+        document.execCommand('copy');
+        
+        // 显示复制成功提示
+        const btn = element.nextElementSibling;
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-check" viewBox="0 0 16 16"><path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/></svg> 已复制';
+        
+        setTimeout(() => {
+            btn.innerHTML = originalText;
+        }, 2000);
+    }
+    
+    function confirmDelete() {
+        return confirm('确定要删除这条提交数据吗？此操作不可撤销！');
+    }
+    
+    function toggleSelectAll(source) {
+        const checkboxes = document.querySelectorAll('input[name="submission_ids"]');
+        for (let checkbox of checkboxes) {
+            checkbox.checked = source.checked;
+        }
+    }
+    
+    function deleteSelectedSubmissions() {
+        const selectedCheckboxes = document.querySelectorAll('input[name="submission_ids"]:checked');
+        if (selectedCheckboxes.length === 0) {
+            alert('请至少选择一条要删除的提交数据');
+            return;
+        }
+        
+        if (confirm(`确定要删除选中的 ${selectedCheckboxes.length} 条提交数据吗？此操作不可撤销！`)) {
+            // 清空批量删除表单中的隐藏输入
+            const bulkForm = document.getElementById('bulkDeleteForm');
+            while (bulkForm.firstChild) {
+                bulkForm.removeChild(bulkForm.firstChild);
+            }
+            
+            // 为每个选中的复选框创建隐藏输入字段
+            for (let checkbox of selectedCheckboxes) {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'submission_ids';
+                input.value = checkbox.value;
+                bulkForm.appendChild(input);
+            }
+            
+            // 提交批量删除表单
+            bulkForm.submit();
+        }
+    }
+
+    // 简化的模态框显示函数
+    function showModal(modalId) {
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.style.display = 'block';
+        }
+    }
+
+    // 关闭模态框
+    function closeModal(modalId) {
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    }
+
+    // 显示二维码
+    function showQRCode(path) {
+        const modal = document.getElementById('qrcodeModal');
+        const container = document.getElementById('qrcodeContainer');
+        container.innerHTML = '';
+        const fullUrl = window.location.origin + path;
+        new QRCode(container, {
+            text: fullUrl,
+            width: 200,
+            height: 200,
+            colorDark: '#000000',
+            colorLight: '#ffffff',
+            correctLevel: QRCode.CorrectLevel.H
+        });
+        setTimeout(function() {
+            const qrCanvas = container.querySelector('canvas');
+            if (qrCanvas) {
+                const logoImg = document.createElement('img');
+                logoImg.src = '/static/openmentor_logo.png';
+                logoImg.style.cssText = 'position: absolute; width: 36px; height: 36px; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border-radius: 4px; padding: 2px; border: 1px solid #ddd;';
+                container.appendChild(logoImg);
+            }
+        }, 100);
+        modal.style.display = 'block';
+    }
+
+    // 关闭二维码
+    function closeQRCode() {
+        const modal = document.getElementById('qrcodeModal');
+        modal.style.display = 'none';
+    }
+
+    // 点击模态框背景关闭
+    document.addEventListener('DOMContentLoaded', function() {
+        const modal = document.getElementById('qrcodeModal');
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) {
+                modal.style.display = 'none';
+            }
+        });
+
+        // 事件委托：处理所有二维码按钮点击
+        document.addEventListener('click', function(e) {
+            if (e.target.closest('.qr-btn')) {
+                const btn = e.target.closest('.qr-btn');
+                const path = btn.getAttribute('data-path');
+                if (path) {
+                    showQRCode(path);
+                }
+            }
+        });
+
+        // 文件上传处理
+        document.getElementById('uploadForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const fileInput = document.getElementById('attachmentFile');
+            const statusDiv = document.getElementById('uploadStatus');
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            statusDiv.style.display = 'block';
+            statusDiv.innerHTML = '<span style="color: #6B6760;">上传中...</span>';
+
+            fetch(window.location.pathname + '/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    statusDiv.innerHTML = '<span style="color: #5B7553;">上传成功！</span>';
+                    setTimeout(function() {
+                        window.location.reload();
+                    }, 1000);
+                } else {
+                    statusDiv.innerHTML = '<span style="color: #B8463E;">上传失败: ' + data.message + '</span>';
+                }
+            })
+            .catch(error => {
+                statusDiv.innerHTML = '<span style="color: #B8463E;">上传出错: ' + error.message + '</span>';
+            });
+        });
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,120 @@
+{% extends 'base.html' %}
+
+{% block title %}编辑任务 - {{ get_app_name() }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="mb-3 d-flex justify-content-end">
+            <a href="{{ url_for('task_detail', task_id=task.id) }}" class="btn btn-secondary">
+                <i class="bi bi-arrow-left"></i> 返回任务详情
+            </a>
+        </div>
+        <div class="card border-0 shadow-sm" style="border-radius: 10px; overflow: hidden;">
+            <div class="card-header">
+                <h3 class="text-center mb-0" style="font-weight: 600;">编辑数据任务</h3>
+            </div>
+            <div class="card-body" style="padding: 2rem;">
+                <form method="POST" action="{{ url_for('edit_task', task_id=task.id) }}" enctype="multipart/form-data">
+                    <div class="mb-4">
+                        <label for="title" class="form-label" style="font-weight: 500;">任务标题</label>
+                        <input type="text" class="form-control" id="title" name="title" required value="{{ task.title }}" style="border-radius: 8px;">
+                    </div>
+                    <div class="mb-4">
+                        <label for="description" class="form-label" style="font-weight: 500;">任务描述（可选）</label>
+                        <textarea class="form-control" id="description" name="description" rows="4" style="border-radius: 8px;">{{ task.description }}</textarea>
+                    </div>
+
+                    <!-- 已有附件列表 -->
+                    {% if task.attachments %}
+                    <div class="mb-4" style="border: 2px solid #E5E0D8; border-radius: 12px; padding: 1.5rem; background-color: #F7F4EC;">
+                        <label class="form-label" style="font-weight: 600; color: #2D2A24; font-size: 1.1rem;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-folder" viewBox="0 0 16 16" style="vertical-align: middle; margin-right: 8px; color: #141413;">
+                                <path d="M.54 3.87.5 3a2 2 0 0 1 2-2h3.672a2 2 0 0 1 1.414.586l.828.828A2 2 0 0 0 9.828 3h3.982a2 2 0 0 1 1.992 2.181l-.637 7A2 2 0 0 1 13.174 14H2.826a2 2 0 0 1-1.991-1.819l-.637-7a1.99 1.99 0 0 1 .342-1.31zM2.19 4a1 1 0 0 0-.996 1.09l.637 7a1 1 0 0 0 .995.91h10.348a1 1 0 0 0 .995-.91l.637-7A1 1 0 0 0 13.81 4H2.19zm4.69-1.707A1 1 0 0 0 6.172 2H2.5a1 1 0 0 0-1 .981l.006.139C1.72 3.042 1.95 3 2.19 3h5.396l-.707-.707z"/>
+                            </svg>
+                            已有附件（{{ task.attachments|length }}个）
+                        </label>
+                        {% for attachment in task.attachments %}
+                        <br>
+                        <div class="d-inline-flex align-items-center me-2 mb-2">
+                                <a href="/static/uploads/{{ attachment.file_path.split('/')[-1].split('\\')[-1] }}" target="_blank" class="btn" style="font-weight: 500; border-radius: 8px 0 0 8px; padding: 0.5rem 1rem;">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-file-earmark" viewBox="0 0 16 16">
+                                        <path d="M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5L14 4.5zm-3-2A1.5 1.5 0 0 1 9.5 0H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4.5a1.5 1.5 0 0 1-1.5 1.5H11a1.5 1.5 0 0 1-1.5-1.5z"/>
+                                    </svg>
+                                    {{ attachment.file_name }}
+                                </a>
+                                <button type="button" class="btn delete-attachment" data-id="{{ attachment.id }}" style="background-color: #B8463E; color: white; border-radius: 0 8px 8px 0; padding: 0.5rem 0.75rem;" title="删除附件">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-trash" viewBox="0 0 16 16">
+                                        <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
+                                        <path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+
+                    <!-- 新附件上传区域 -->
+                    <div class="mb-4" style="border: 2px solid #E5E0D8; border-radius: 12px; padding: 1.5rem; background-color: #F7F4EC;">
+                        <label class="form-label" style="font-weight: 600; color: #2D2A24; font-size: 1.1rem;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-plus-circle" viewBox="0 0 16 16" style="vertical-align: middle; margin-right: 8px; color: #141413;">
+                                <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+                                <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
+                            </svg>
+                            添加新附件（可选）
+                        </label>
+                        
+                        <!-- 文件1上传 -->
+                        <div class="mb-3">
+                            <input type="file" class="form-control" id="file" name="file" accept=".pdf,.html,.htm,.jpg,.zip" style="border-radius: 8px; border: 1px solid #C9C3B8;">
+                        </div>
+                        
+                        <!-- 文件2上传 -->
+                        <div class="mb-3">
+                            <input type="file" class="form-control" id="file_2" name="file_2" accept=".pdf,.html,.htm,.jpg,.zip" style="border-radius: 8px; border: 1px solid #C9C3B8;">
+                        </div>
+                        <div class="form-text" style="color: #6B6760;">支持上传PDF、HTML、HTM、JPG和ZIP格式的文件，最大16MB。可以同时上传多个文件。</div>
+                    </div>
+
+                    <div class="d-flex justify-content-between" style="gap: 10px;">
+                        <a href="{{ url_for('task_detail', task_id=task.id) }}" class="btn" style="background-color: #F7F4EC; color: #2D2A24; font-weight: 500; border-radius: 8px; padding: 0.75rem 1.5rem; transition: all 0.3s ease;">
+                            取消
+                        </a>
+                        <button type="submit" class="btn" style="font-weight: 500; border-radius: 8px; padding: 0.75rem 1.5rem; transition: all 0.3s ease;">
+                            保存修改
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('click', function(e) {
+    if (e.target.closest('.delete-attachment')) {
+        const btn = e.target.closest('.delete-attachment');
+        const attachmentId = btn.getAttribute('data-id');
+        if (confirm('确定要删除这个附件吗？')) {
+            fetch('/delete_attachment/' + attachmentId, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    btn.closest('.d-inline-flex').remove();
+                } else {
+                    alert('删除失败: ' + data.message);
+                }
+            })
+            .catch(error => {
+                alert('删除出错: ' + error.message);
+            });
+        }
+    }
+});
+</script>
+{% endblock %}

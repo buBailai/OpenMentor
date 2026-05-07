@@ -1,0 +1,18 @@
+Flask==3.0.3
+Flask-Login==0.6.3
+Flask-SQLAlchemy==3.1.1
+Flask-Bcrypt==1.0.1
+SQLAlchemy==2.0.45
+bcrypt==5.0.0
+python-dotenv==1.0.1
+pandas==2.0.3
+matplotlib==3.7.5
+requests==2.32.4
+# OpenMentor multimodal deps
+pypdf>=4.0.0
+python-docx>=1.1.0
+python-pptx>=1.0.0
+Pillow>=10.0.0
+pillow-heif>=0.16.0
+openpyxl>=3.0.0
+xlrd>=2.0.0

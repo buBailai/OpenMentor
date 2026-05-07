@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+
+{% block title %}导入 AI 导师 - {{ get_app_name() }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="mb-3 d-flex justify-content-end">
+            <a href="{{ url_for('assistant_list') }}" class="btn btn-secondary">
+                <i class="bi bi-arrow-left"></i> 返回 AI 导师列表
+            </a>
+        </div>
+        <div class="card">
+            <div class="card-header">
+                <h3 class="text-center mb-0">
+                    <i class="bi bi-cloud-upload"></i> 导入 AI 导师模板
+                </h3>
+            </div>
+            <div class="card-body" style="padding: 1.5rem;">
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% for category, message in messages %}
+                    <div class="alert alert-{{ category if category in ['success', 'danger', 'warning', 'info'] else 'info' }}">{{ message }}</div>
+                    {% endfor %}
+                {% endwith %}
+
+                <p class="text-muted">从其他老师分享的 JSON 模板中导入。模板包含助学的标题、系统提示词、欢迎语和各项配置，**不包含** API Key、对话历史和附件（这些由你自己重新配置）。</p>
+
+                <form method="POST" enctype="multipart/form-data">
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold">方式 1：上传 JSON 文件</label>
+                        <input type="file" class="form-control" name="template_file" accept=".json,application/json">
+                    </div>
+
+                    <div class="text-center text-muted my-3">— 或 —</div>
+
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold">方式 2：粘贴 JSON 文本</label>
+                        <textarea class="form-control" name="template_json" rows="10" placeholder='{
+  "openmentor_template_version": "1.0",
+  "title": "高中数学解题导师",
+  "system_prompt": "...",
+  "welcome_message": "...",
+  ...
+}' style="font-family: monospace; font-size: 0.85rem;"></textarea>
+                    </div>
+
+                    <div class="d-flex justify-content-between">
+                        <a href="{{ url_for('assistant_list') }}" class="btn btn-secondary">取消</a>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-cloud-upload"></i> 导入
+                        </button>
+                    </div>
+                </form>
+
+                <div class="alert alert-info mt-4 small" style="">
+                    <strong><i class="bi bi-shield-check"></i> 安全说明：</strong>
+                    导入的模板仅包含配置，不会窃取你的 API Key。导入后请检查系统提示词内容是否合适，并在「个人设置」配置好对应的模型 Key。
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

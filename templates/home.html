@@ -1,0 +1,89 @@
+{% extends 'base.html' %}
+
+{% block title %}首页 - {{ get_app_name() }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <!-- Hero -->
+        <div class="row align-items-end mb-5 pt-3">
+            <div class="col-md-7">
+                <h1 class="om-display mb-2" style="font-size: 3rem;">
+                    让每个老师<br>都有自己的<br><u style="text-decoration-thickness: 2px; text-underline-offset: 6px;">开源 AI 导师</u>。
+                </h1>
+            </div>
+            <div class="col-md-5">
+                <p class="text-muted mb-3" style="font-size: 1rem; line-height: 1.65;">
+                    OpenMentor 让你 5 分钟搭出专属 AI 助教，学生扫码即用。
+                    数据全在本地，自带 API Key，完全开源。基于 QuickForm 二次开发，保留全部原有数据采集能力。
+                </p>
+                {% if current_user.is_authenticated %}
+                <div class="d-flex gap-2 flex-wrap">
+                    <a href="{{ url_for('assistant_list') }}" class="btn btn-primary">进入 AI 导师</a>
+                    <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">数据任务</a>
+                </div>
+                {% else %}
+                <a href="{{ url_for('login') }}" class="btn btn-primary">登录开始</a>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- 特色卡片 -->
+        <div class="row g-3 mb-5">
+            <div class="col-md-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <div style="color: var(--om-clay); font-size: 1.5rem; margin-bottom: 0.5rem;"><i class="bi bi-robot"></i></div>
+                        <h5 class="card-title">AI 导师</h5>
+                        <p class="card-text text-muted" style="font-size: 0.92rem;">写一段系统提示词即可拥有专属 AI 助教，学生扫码进入对话。</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <div style="color: var(--om-clay); font-size: 1.5rem; margin-bottom: 0.5rem;"><i class="bi bi-magic"></i></div>
+                        <h5 class="card-title">AI 帮你写提示词</h5>
+                        <p class="card-text text-muted" style="font-size: 0.92rem;">填几个问题或上传素材，AI 自动生成专业 system prompt 草稿。</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <div style="color: var(--om-clay); font-size: 1.5rem; margin-bottom: 0.5rem;"><i class="bi bi-eye"></i></div>
+                        <h5 class="card-title">实时审计</h5>
+                        <p class="card-text text-muted" style="font-size: 0.92rem;">老师后台看每个学生的对话流，含图片/文件/AI 生成图。</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 快速开始（保留 QuickForm 数据任务说明） -->
+        <div class="card">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <h5 class="card-title mb-3">QuickForm 数据任务（保留）</h5>
+                        <ol class="text-muted mb-0" style="font-size: 0.92rem; line-height: 1.8;">
+                            <li>登录系统，创建新的数据任务，获取 API 地址（URL）</li>
+                            <li>在任意 HTML 表单/网页中将数据提交到该 API 地址</li>
+                            <li>在数据任务中查看并借助 AI 分析收集的数据</li>
+                        </ol>
+                    </div>
+                    <div class="col-md-4 text-md-end mt-3 mt-md-0">
+                        <div class="d-flex flex-wrap gap-2 justify-content-md-end">
+                            {% if current_user.is_authenticated %}
+                            <a href="{{ url_for('dashboard') }}" class="btn btn-outline-primary">进入数据任务</a>
+                            {% endif %}
+                            <a href="https://quickform.cn/" target="_blank" rel="noopener" class="btn btn-outline-secondary">
+                                <i class="bi bi-box-arrow-up-right"></i> QuickForm 官网
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

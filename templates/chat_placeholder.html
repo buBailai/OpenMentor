@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ assistant.title }} - {{ get_app_name() }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-icons/bootstrap-icons.min.css') }}">
+    <style>
+        body { background: #F0EEE6; min-height: 100vh; display: flex; align-items: center; justify-content: center; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+        .card-wrap { max-width: 520px; padding: 3rem 2.5rem; background: white; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.15); text-align: center; }
+        .icon { font-size: 4rem; margin-bottom: 1rem; }
+        h1 { font-size: 1.75rem; color: #141413; font-weight: 700; margin-bottom: 0.5rem; }
+        .subtitle { color: #6B6760; margin-bottom: 1.5rem; }
+        .welcome-box { background: #F7F4EC; border: 1px solid #E5E0D8; padding: 1rem; border-radius: 8px; color: #141413; margin-bottom: 1.5rem; line-height: 1.6; text-align: left; }
+        .badge-info { display: inline-block; background: #F5EDD8; color: #8C6A0A; padding: 0.5rem 1rem; border-radius: 999px; font-size: 0.875rem; }
+        .footer { margin-top: 2rem; font-size: 0.85rem; color: #94918B; }
+    </style>
+</head>
+<body>
+    <div class="card-wrap">
+        <div class="icon" style="color:#141413;"><i class="bi bi-robot"></i></div>
+        <h1>{{ assistant.title }}</h1>
+        <p class="subtitle">{{ assistant.description or '欢迎使用 AI 学习助手' }}</p>
+
+        {% if assistant.welcome_message %}
+        <div class="welcome-box">
+            <i class="bi bi-chat-dots"></i> {{ assistant.welcome_message }}
+        </div>
+        {% endif %}
+
+        <div class="badge-info"><i class="bi bi-hourglass-split"></i> 学生端聊天界面将在 Day 5-7 上线</div>
+
+        <div class="footer">{{ get_app_name() }} · 让每个老师都有自己的开源 AI 导师</div>
+    </div>
+</body>
+</html>

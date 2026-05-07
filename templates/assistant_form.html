@@ -1,0 +1,419 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import assistant_avatar %}
+
+{% block title %}{{ '编辑' if mode == 'edit' else '创建' }} AI 导师 - {{ get_app_name() }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-9">
+        <div class="mb-3 d-flex justify-content-end">
+            <a href="{{ url_for('assistant_list') }}" class="btn btn-secondary">
+                <i class="bi bi-arrow-left"></i> 返回 AI 导师列表
+            </a>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h3 class="text-center mb-0" style="font-weight: 600;">
+                    <i class="bi bi-robot me-2"></i>{{ '编辑' if mode == 'edit' else '创建' }} AI 导师
+                </h3>
+            </div>
+            <div class="card-body" style="padding: 1.5rem;">
+                <form method="POST" enctype="multipart/form-data" action="{{ url_for('assistant_edit', assistant_id=assistant.id) if mode == 'edit' else url_for('assistant_create') }}">
+
+                    <!-- 基础信息 -->
+                    <h5 class="mb-3" style="color: #141413; font-weight: 600;"><i class="bi bi-info-circle me-1"></i>基础信息</h5>
+
+                    <div class="mb-4">
+                        <label for="title" class="form-label fw-semibold">助学名称 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="title" name="title" required
+                               value="{{ assistant.title if assistant else '' }}"
+                               placeholder="例如：高中数学解题导师">
+                        <div class="form-text text-muted">学生在对话页面会看到这个名称</div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="description" class="form-label fw-semibold">简介（可选）</label>
+                        <textarea class="form-control" id="description" name="description" rows="2"
+                                  placeholder="简短描述这个 AI 导师的用途，方便老师自己管理">{{ assistant.description if assistant else '' }}</textarea>
+                    </div>
+
+                    <!-- 头像 -->
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold">头像（可选）</label>
+                        <div class="d-flex align-items-center gap-3">
+                            <span id="avatar-preview-wrap">
+                                {% if assistant %}
+                                    {{ assistant_avatar(assistant, size='lg') }}
+                                {% else %}
+                                    <span class="om-avatar size-lg om-avatar-initial-1">A</span>
+                                {% endif %}
+                            </span>
+                            <div class="flex-fill">
+                                <input type="file" class="form-control form-control-sm" id="avatar" name="avatar"
+                                       accept="image/png,image/jpeg,image/webp,image/gif">
+                                <div class="form-text text-muted small">支持 PNG/JPG/WebP/GIF，≤ 3 MB。不上传则显示首字母色块。</div>
+                                {% if mode == 'edit' and assistant and assistant.avatar_path %}
+                                <div class="form-check mt-1">
+                                    <input class="form-check-input" type="checkbox" id="remove_avatar" name="remove_avatar">
+                                    <label class="form-check-label small text-muted" for="remove_avatar">移除当前头像</label>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- AI 配置 -->
+                    <hr class="my-4">
+                    <h5 class="mb-3" style="color: #141413; font-weight: 600;"><i class="bi bi-cpu me-1"></i>AI 配置</h5>
+
+                    <div class="mb-4">
+                        <label for="selected_model_name" class="form-label fw-semibold">选择模型</label>
+                        <select class="form-select" id="selected_model_name" name="selected_model_name">
+                            {% for key, cap in model_capabilities.items() %}
+                            <option value="{{ key }}"
+                                {% if assistant and assistant.selected_model_name == key %}selected
+                                {% elif not assistant and ai_config and ai_config.selected_model == key %}selected
+                                {% endif %}>{{ cap.label }}{% if cap.image_input %} · 支持图片{% endif %}{% if cap.image_generation %} · 支持图生{% endif %}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text text-muted">需先在「个人设置」中配置对应 API Key。不同助学可使用不同模型。</div>
+                    </div>
+
+                    <div class="mb-4">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <label for="system_prompt" class="form-label fw-semibold mb-0">系统提示词（System Prompt） <span class="text-danger">*</span></label>
+                            <button type="button" id="btn-gen-prompt" class="btn btn-sm" style="background: #D97757; color: white; font-weight: 600; border: none; border-radius: 8px; padding: 0.3rem 0.875rem;">
+                                <i class="bi bi-magic"></i> AI 帮我写提示词
+                            </button>
+                        </div>
+                        <textarea class="form-control" id="system_prompt" name="system_prompt" rows="6" required
+                                  placeholder="例：你是一位耐心的高中数学老师。学生提问时，先引导他思考解题思路，再一步步讲解，避免直接给出答案。语气温和，多用比喻。不回答与数学无关的内容。">{{ assistant.system_prompt if assistant else '' }}</textarea>
+                        <div class="form-text text-muted">
+                            决定 AI 助教的角色、行为风格、教学方法的核心配置。不会写？点上方紫色按钮让 AI 帮你设计。
+                        </div>
+                    </div>
+
+                    <!-- AI 提示词生成模态框 -->
+                    <div id="prompt-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center; padding:1rem; overflow-y:auto;">
+                        <div style="background:white; border-radius:14px; max-width:680px; width:100%; max-height:92vh; overflow-y:auto; padding:1.5rem 1.75rem;">
+                            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.5rem;">
+                                <div>
+                                    <h4 style="margin:0; color:#141413; font-weight:700;"><i class="bi bi-magic"></i> AI 帮你写系统提示词</h4>
+                                    <p style="margin:0.25rem 0 0; color:#6B6760; font-size:0.9rem;">填几个问题或上传素材，AI 给你一个专业草稿。</p>
+                                </div>
+                                <button type="button" id="prompt-modal-close" style="background:transparent; border:none; font-size:1.5rem; color:#94918B; cursor:pointer; padding:0 0.25rem;">×</button>
+                            </div>
+                            <hr>
+
+                            <div class="mb-3">
+                                <label class="fw-semibold mb-1" style="font-size:0.95rem;">① 这个 AI 助教的角色定位是什么？</label>
+                                <input type="text" id="prompt-role" class="form-control" placeholder="例：高中数学解题导师 / 文言文阅读助教 / 英语口语陪练">
+                            </div>
+                            <div class="mb-3">
+                                <label class="fw-semibold mb-1" style="font-size:0.95rem;">② 面向哪些学生？</label>
+                                <input type="text" id="prompt-audience" class="form-control" placeholder="例：高一基础薄弱的学生 / 初三准备中考的同学">
+                            </div>
+                            <div class="mb-3">
+                                <label class="fw-semibold mb-1" style="font-size:0.95rem;">③ 你希望它怎么做？（教学方法）</label>
+                                <textarea id="prompt-dos" class="form-control" rows="2" placeholder="例：先引导学生思考，提示关键概念，不直接给答案；用生活化例子讲解；鼓励学生表达"></textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label class="fw-semibold mb-1" style="font-size:0.95rem;">④ 你希望它不要做什么？（边界）</label>
+                                <textarea id="prompt-donts" class="form-control" rows="2" placeholder="例：不直接抄写答案、不讨论政治宗教、不评论同学、不答与学科无关的内容"></textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label class="fw-semibold mb-1" style="font-size:0.95rem;">⑤ 期望的语气与风格？</label>
+                                <input type="text" id="prompt-tone" class="form-control" placeholder="例：温和耐心 / 幽默风趣 / 严谨专业 / 像哥哥姐姐一样平等">
+                            </div>
+                            <div class="mb-3">
+                                <label class="fw-semibold mb-1" style="font-size:0.95rem;">⑥ 上传素材（可选，PDF/Word/TXT/MD/CSV，单个 ≤ 5MB）</label>
+                                <input type="file" id="prompt-files" class="form-control" multiple accept=".pdf,.docx,.txt,.md,.csv">
+                                <div class="form-text text-muted small">如教材片段、教案要点、知识点清单等。AI 会把素材中的教学要点融入提示词。</div>
+                            </div>
+
+                            <div id="prompt-error" style="display:none; padding:0.5rem 0.75rem; background:#F2DCD9; color:#8B342E; border-radius:6px; margin-bottom:0.75rem; font-size:0.875rem;"></div>
+
+                            <!-- 草稿展示区 -->
+                            <div id="prompt-draft-wrap" style="display:none; margin-top:1rem;">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <label class="fw-semibold mb-0" style="font-size:0.95rem;"><i class="bi bi-stars"></i> AI 生成的草稿</label>
+                                    <small class="text-muted" id="prompt-draft-meta"></small>
+                                </div>
+                                <textarea id="prompt-draft" class="form-control" rows="10" style="font-family:inherit; font-size:0.9rem; background:#F7F4EC;"></textarea>
+                                <div class="form-text text-muted">你可以直接修改后采用。</div>
+                            </div>
+
+                            <div style="display:flex; gap:0.5rem; justify-content:flex-end; margin-top:1rem; flex-wrap:wrap;">
+                                <button type="button" id="prompt-cancel" class="btn btn-secondary" style="background:#6B6760; border:none;">取消</button>
+                                <button type="button" id="prompt-regen" class="btn btn-outline-primary" style="display:none;"><i class="bi bi-arrow-clockwise"></i> 重新生成</button>
+                                <button type="button" id="prompt-apply" class="btn btn-success" style="display:none; background:#5B7553; border:none; font-weight:600;"><i class="bi bi-check-lg"></i> 采用到主表单</button>
+                                <button type="button" id="prompt-submit" class="btn btn-primary" style="background: #D97757; border:none; font-weight:600;"><i class="bi bi-magic"></i> 生成草稿</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="welcome_message" class="form-label fw-semibold">学生欢迎语（可选）</label>
+                        <textarea class="form-control" id="welcome_message" name="welcome_message" rows="2"
+                                  placeholder="例：你好！我是数学解题导师，遇到不会做的题目可以来问我哦~">{{ assistant.welcome_message if assistant else '' }}</textarea>
+                        <div class="form-text text-muted">学生进入对话时显示的第一句话</div>
+                    </div>
+
+                    <!-- 多模态开关 -->
+                    <hr class="my-4">
+                    <h5 class="mb-3" style="color: #141413; font-weight: 600;"><i class="bi bi-images me-1"></i>多模态能力</h5>
+
+                    <div class="mb-3 form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="allow_image_input" name="allow_image_input"
+                               {% if not assistant or assistant.allow_image_input %}checked{% endif %}>
+                        <label class="form-check-label fw-semibold" for="allow_image_input">允许学生上传图片</label>
+                        <div class="form-text text-muted small">
+                            <i class="bi bi-exclamation-triangle"></i> 需所选模型支持视觉理解。在「个人设置」配置时请填写视觉版模型名：
+                            <strong>豆包</strong> → <code>doubao-seed-1-6-vision-250815</code>；
+                            <strong>通义</strong> → <code>qwen-vl-plus</code> / <code>qwen-vl-max</code>；
+                            <strong>智谱</strong> → <code>glm-4v</code> / <code>glm-4v-plus</code>。
+                            DeepSeek/Ollama 暂不支持。
+                        </div>
+                    </div>
+
+                    <div class="mb-3 form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="allow_file_upload" name="allow_file_upload"
+                               {% if not assistant or assistant.allow_file_upload %}checked{% endif %}>
+                        <label class="form-check-label fw-semibold" for="allow_file_upload">允许学生上传文件</label>
+                        <div class="form-text text-muted small">支持 PDF / Word / TXT 等，AI 会读取文件文本</div>
+                    </div>
+
+                    <div class="mb-4 form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="allow_image_generation" name="allow_image_generation"
+                               {% if assistant and assistant.allow_image_generation %}checked{% endif %}>
+                        <label class="form-check-label fw-semibold" for="allow_image_generation">允许 AI 生成图片</label>
+                        <div class="form-text text-muted small">需所选模型支持文生图</div>
+                    </div>
+
+                    <!-- 安全策略 -->
+                    <hr class="my-4">
+                    <h5 class="mb-3" style="color: #141413; font-weight: 600;"><i class="bi bi-shield-lock me-1"></i>安全策略</h5>
+
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <label for="max_messages_per_student_daily" class="form-label fw-semibold">每生每日消息上限</label>
+                            <input type="number" class="form-control" id="max_messages_per_student_daily" name="max_messages_per_student_daily"
+                                   min="1" max="500" value="{{ assistant.max_messages_per_student_daily if assistant else 50 }}">
+                            <div class="form-text text-muted small">达到上限当日不能再发，次日 0 点自动重置</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="link_expires_hours" class="form-label fw-semibold">
+                                链接有效期
+                                {% if mode == 'edit' %}
+                                <span class="text-muted small">（默认不变）</span>
+                                {% endif %}
+                            </label>
+                            <select class="form-select" id="link_expires_hours" name="link_expires_hours">
+                                <option value="24">24 小时（1 天）</option>
+                                <option value="48" {% if not assistant %}selected{% endif %}>48 小时（2 天，推荐）</option>
+                                <option value="72">72 小时（3 天）</option>
+                                <option value="168">168 小时（7 天，最长）</option>
+                            </select>
+                            <div class="form-text text-muted small">
+                                {% if mode == 'edit' %}
+                                <input type="checkbox" id="reset_expires" name="reset_expires" class="form-check-input me-1">
+                                <label for="reset_expires" class="form-check-label">勾选后保存时按上方时长重置</label>
+                                <br>
+                                {% endif %}
+                                防止链接长期外泄被滥用
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 学生身份验证（B4 花名册） -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">学生身份验证</label>
+                        <div class="form-text text-muted mb-2">
+                            决定学生进入对话时如何提供身份。启用「花名册校验」后会在
+                            <a href="{{ url_for('roster_index') }}" target="_blank" rel="noopener">班级花名册</a>
+                            中查找学生；不在花名册的学生无法进入。
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="roster_mode" id="roster_mode_off" value="off"
+                                   {% if not assistant or (assistant.roster_mode or 'off') == 'off' %}checked{% endif %}>
+                            <label class="form-check-label" for="roster_mode_off">
+                                <strong>自由填写</strong> <span class="text-muted small">（默认）—— 学生自行输入班级和姓名</span>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="roster_mode" id="roster_mode_strict" value="strict"
+                                   {% if assistant and assistant.roster_mode == 'strict' %}checked{% endif %}>
+                            <label class="form-check-label" for="roster_mode_strict">
+                                <strong>花名册校验</strong> <span class="text-muted small">—— 学生从下拉中选择班级再选姓名，仅花名册中的学生可进入</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- 黑名单 -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">关键词黑名单</label>
+                        <div class="form-text text-muted mb-2">
+                            学生输入命中关键词时，会被拦截并友好提示。每行一个关键词，或用中英文逗号分隔。
+                        </div>
+
+                        {% for key, cat in blocked_keywords.items() %}
+                        <div class="card mb-2" style="border: 1px solid #E5E0D8;">
+                            <div class="card-body" style="padding: 0.875rem 1rem;">
+                                <div class="form-check form-switch mb-2">
+                                    <input class="form-check-input" type="checkbox" id="bk_{{ key }}_enabled" name="bk_{{ key }}_enabled"
+                                           {% if cat.enabled %}checked{% endif %}>
+                                    <label class="form-check-label fw-semibold" for="bk_{{ key }}_enabled">{{ cat.label }}</label>
+                                </div>
+                                <textarea class="form-control form-control-sm" name="bk_{{ key }}_keywords" rows="2"
+                                          placeholder="多个关键词用换行或逗号分隔">{{ cat.keywords | join('，') }}</textarea>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                    <!-- 提交 -->
+                    <hr class="my-4">
+                    <div class="d-flex justify-content-between">
+                        <a href="{{ url_for('assistant_list') }}" class="btn btn-secondary" style="padding: 0.625rem 1.5rem;">取消</a>
+                        <button type="submit" class="btn btn-primary">
+                            {% if mode == 'edit' %}保存修改{% else %}创建 AI 导师{% endif %}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    const $ = (id) => document.getElementById(id);
+    const modal = $('prompt-modal');
+    const btnOpen = $('btn-gen-prompt');
+    const btnClose = $('prompt-modal-close');
+    const btnCancel = $('prompt-cancel');
+    const btnSubmit = $('prompt-submit');
+    const btnRegen = $('prompt-regen');
+    const btnApply = $('prompt-apply');
+    const errEl = $('prompt-error');
+    const draftWrap = $('prompt-draft-wrap');
+    const draftEl = $('prompt-draft');
+    const draftMeta = $('prompt-draft-meta');
+    const sysPromptEl = $('system_prompt');
+
+    if (!btnOpen) return;
+
+    function openModal() {
+        modal.style.display = 'flex';
+        errEl.style.display = 'none';
+        draftWrap.style.display = 'none';
+        btnApply.style.display = 'none';
+        btnRegen.style.display = 'none';
+        btnSubmit.disabled = false;
+        btnSubmit.innerHTML = '<i class="bi bi-magic"></i> 生成草稿';
+    }
+    function closeModal() { modal.style.display = 'none'; }
+
+    btnOpen.addEventListener('click', openModal);
+    btnClose.addEventListener('click', closeModal);
+    btnCancel.addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+
+    function showErr(msg) {
+        errEl.textContent = msg;
+        errEl.style.display = 'block';
+    }
+
+    async function generateDraft() {
+        const role = $('prompt-role').value.trim();
+        const audience = $('prompt-audience').value.trim();
+        const dos = $('prompt-dos').value.trim();
+        const donts = $('prompt-donts').value.trim();
+        const tone = $('prompt-tone').value.trim();
+        const filesEl = $('prompt-files');
+        const files = filesEl.files;
+        const existingDraft = sysPromptEl.value.trim();
+
+        if (!role && !audience && !dos && !donts && !tone && (!files || files.length === 0)) {
+            showErr('至少填一项问题或上传一份素材');
+            return;
+        }
+
+        errEl.style.display = 'none';
+        btnSubmit.disabled = true;
+        btnSubmit.innerHTML = '<i class="bi bi-hourglass-split"></i> 生成中（约 5-30 秒）...';
+        btnRegen.disabled = true;
+
+        const fd = new FormData();
+        fd.append('role', role);
+        fd.append('audience', audience);
+        fd.append('dos', dos);
+        fd.append('donts', donts);
+        fd.append('tone', tone);
+        if (existingDraft) fd.append('existing_draft', existingDraft);
+        for (const f of files || []) fd.append('files', f);
+
+        try {
+            const r = await fetch('/assistant/generate_prompt', {method: 'POST', body: fd});
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok || !data.success) {
+                showErr(data.message || `生成失败 (${r.status})`);
+                btnSubmit.disabled = false;
+                btnSubmit.innerHTML = '<i class="bi bi-arrow-clockwise"></i> 重试';
+                btnRegen.disabled = false;
+                return;
+            }
+            // 渲染草稿
+            draftEl.value = data.generated_prompt || '';
+            draftMeta.textContent = `${data.generated_prompt.length} 字 · 来自 ${data.model_used}` +
+                (data.material_count > 0 ? ` · 已读取 ${data.material_count} 份素材` : '');
+            draftWrap.style.display = 'block';
+            btnSubmit.style.display = 'none';
+            btnRegen.style.display = 'inline-block';
+            btnApply.style.display = 'inline-block';
+            btnRegen.disabled = false;
+        } catch (e) {
+            showErr('网络异常：' + e.message);
+            btnSubmit.disabled = false;
+            btnSubmit.innerHTML = '<i class="bi bi-arrow-clockwise"></i> 重试';
+        }
+    }
+
+    btnSubmit.addEventListener('click', generateDraft);
+    btnRegen.addEventListener('click', () => {
+        btnSubmit.style.display = 'inline-block';
+        btnRegen.style.display = 'none';
+        btnApply.style.display = 'none';
+        btnSubmit.disabled = false;
+        btnSubmit.innerHTML = '<i class="bi bi-arrow-clockwise"></i> 重新生成';
+        generateDraft();
+    });
+    btnApply.addEventListener('click', () => {
+        const draft = draftEl.value.trim();
+        if (!draft) { showErr('草稿为空'); return; }
+        if (sysPromptEl.value.trim() && !confirm('当前系统提示词会被覆盖，确认吗？')) return;
+        sysPromptEl.value = draft;
+        sysPromptEl.scrollIntoView({behavior: 'smooth', block: 'center'});
+        sysPromptEl.focus();
+        closeModal();
+    });
+})();
+
+// 头像即时预览
+(function() {
+    var input = document.getElementById('avatar');
+    var wrap = document.getElementById('avatar-preview-wrap');
+    if (!input || !wrap) return;
+    input.addEventListener('change', function(e) {
+        var f = e.target.files && e.target.files[0];
+        if (!f) return;
+        var reader = new FileReader();
+        reader.onload = function(ev) {
+            wrap.innerHTML = '<span class="om-avatar size-lg"><img src="' + ev.target.result + '" alt=""></span>';
+        };
+        reader.readAsDataURL(f);
+    });
+})();
+</script>
+{% endblock %}

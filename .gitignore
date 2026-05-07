@@ -1,0 +1,42 @@
+# ---------- 开发环境 ----------
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ---------- IDE / 编辑器 ----------
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ---------- 系统 ----------
+.DS_Store
+Thumbs.db
+
+# ---------- 敏感配置 ----------
+.env
+.env.local
+*.local
+
+# ---------- 用户数据（运行时生成） ----------
+# 学生上传的图片 / 文件 / AI 生成的图（每个 AI 导师一个子目录）
+static/uploads/openmentor/*
+!static/uploads/openmentor/.gitkeep
+
+# QuickForm 任务的报告文件
+static/reports/*
+!static/reports/.gitkeep
+
+# 学生身份附件等其他上传
+static/uploads/*.html
+static/uploads/*.pdf
+static/uploads/*.docx
+
+# ---------- 日志 / 临时 ----------
+*.log
+*.tmp
+*.bak

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>无法访问 - {{ get_app_name() }}</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='openmentor_logo.png') }}">
+    <script>
+        (function() {
+            try {
+                var t = localStorage.getItem('om-theme');
+                if (!t) t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+                document.documentElement.setAttribute('data-theme', t);
+            } catch (e) {}
+        })();
+    </script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-icons/bootstrap-icons.min.css') }}">
+    <style>
+        :root {
+            --om-cream: #F0EEE6; --om-paper: #FFFFFF; --om-ink: #141413;
+            --om-muted: #6B6760; --om-border: #E5E0D8; --om-warn: #B8860B;
+            --om-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            --om-font-serif: 'Source Serif 4', 'Tiempos', 'Noto Serif SC', 'Songti SC', serif;
+        }
+        html[data-theme="dark"] {
+            --om-cream: #1F1E1B; --om-paper: #2A2722; --om-ink: #EDE8DD;
+            --om-muted: #94918B; --om-border: #3A362F; --om-warn: #D4A53A;
+        }
+        * { box-sizing: border-box; font-family: var(--om-font-sans); }
+        body {
+            margin: 0;
+            background: var(--om-cream);
+            min-height: 100vh;
+            display: flex; align-items: center; justify-content: center;
+            color: var(--om-ink);
+            padding: 1rem;
+            -webkit-font-smoothing: antialiased;
+        }
+        .card-wrap {
+            max-width: 460px; padding: 2.5rem 2rem;
+            background: var(--om-paper); border-radius: 14px;
+            border: 1px solid var(--om-border);
+            box-shadow: 0 1px 3px rgba(20, 17, 12, 0.04);
+            text-align: center;
+        }
+        .icon { font-size: 2.5rem; color: var(--om-warn); margin-bottom: 1rem; }
+        h1 {
+            font-family: var(--om-font-serif);
+            font-weight: 500;
+            font-size: 1.5rem;
+            color: var(--om-ink);
+            margin: 0 0 0.5rem 0;
+            letter-spacing: -0.025em;
+        }
+        .reason { color: var(--om-muted); line-height: 1.6; font-size: 0.95rem; margin: 0; }
+        .footer { margin-top: 2rem; font-size: 0.825rem; color: var(--om-muted); }
+    </style>
+</head>
+<body>
+    <div class="card-wrap">
+        <div class="icon"><i class="bi bi-exclamation-triangle"></i></div>
+        <h1>无法访问</h1>
+        <p class="reason">{{ reason }}</p>
+        <div class="footer">{{ get_app_name() }} · 让每个老师都有自己的开源 AI 导师</div>
+    </div>
+</body>
+</html>

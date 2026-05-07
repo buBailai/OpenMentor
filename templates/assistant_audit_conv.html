@@ -1,0 +1,229 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ conversation.student_name }} 的对话 - {{ get_app_name() }}{% endblock %}
+
+{% block content %}
+<style>
+.audit-msg-row { display: flex; margin-bottom: 0.875rem; gap: 0.5rem; align-items: flex-start; }
+.audit-msg-row.user { flex-direction: row-reverse; }
+.audit-msg-row.system { justify-content: center; }
+.audit-avatar { width: 28px; height: 28px; border-radius: 50%; background: #141413; color: white; font-size: 0.825rem; font-weight: 600; display: flex; align-items: center; justify-content: center; flex: 0 0 28px; }
+.audit-msg-row.user .audit-avatar { background: #5B7553; }
+.audit-msg-content { max-width: calc(75% - 30px); min-width: 0; display: flex; flex-direction: column; }
+.audit-msg-row.user .audit-msg-content { align-items: flex-end; }
+.audit-bubble {
+    max-width: 100%; padding: 0.625rem 0.875rem; border-radius: 12px;
+    font-size: 0.925rem; line-height: 1.55; word-break: break-word;
+    overflow-wrap: anywhere; min-width: 0;
+}
+.audit-msg-row.assistant .audit-bubble { background: #F7F4EC; color: #141413; border-top-left-radius: 4px; }
+.audit-msg-row.user .audit-bubble { background: #141413; color: white; border-top-right-radius: 4px; }
+.audit-msg-row.system .audit-bubble { background: #F5EDD8; color: #8C6A0A; max-width: 80%; text-align: center; font-size: 0.85rem; }
+.audit-bubble pre { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; font-family: inherit; margin: 0; overflow: visible; min-width: 0; max-width: 100%; padding: 0; background: transparent; color: inherit; border: 0; border-radius: 0; }
+.audit-time { font-size: 0.7rem; color: #94918B; margin-top: 0.2rem; }
+.audit-msg-row.user .audit-time { text-align: right; }
+.audit-attachments { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.4rem; }
+.audit-attachments img { max-width: 180px; max-height: 180px; border-radius: 6px; cursor: pointer; }
+.audit-file-link { font-size: 0.85rem; padding: 0.3rem 0.5rem; background: rgba(37,99,235,0.08); border-radius: 6px; color: #141413; text-decoration: none; }
+.audit-msg-row.user .audit-file-link { background: rgba(255,255,255,0.18); color: #fff; }
+.kw-badge { display: inline-block; background: #F2DCD9; color: #8B342E; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.75rem; margin-bottom: 0.25rem; }
+.audit-rating { display: inline-flex; align-items: center; gap: 0.3rem; margin-top: 0.35rem; padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.78rem; font-weight: 500; }
+.audit-rating.up { background: var(--om-success-soft); color: var(--om-success); }
+.audit-rating.down { background: var(--om-danger-soft); color: var(--om-danger); }
+.audit-rating i { font-size: 0.85rem; }
+.device-switch-bar { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; padding: 0.5rem 0.75rem; background: var(--om-cream-soft); border: 1px solid var(--om-border); border-radius: var(--om-radius); margin-bottom: 0.75rem; }
+.device-switch-bar .device-tab { padding: 0.3rem 0.7rem; border-radius: 999px; border: 1px solid var(--om-border-strong); background: var(--om-paper); color: var(--om-ink); font-size: 0.82rem; text-decoration: none; transition: background 0.15s ease; }
+.device-switch-bar .device-tab:hover { background: var(--om-cream-warm); }
+.device-switch-bar .device-tab.current { background: var(--om-ink); color: var(--om-cream-soft); border-color: var(--om-ink); }
+.device-switch-bar .device-tab .small { color: inherit; opacity: 0.7; margin-left: 0.3rem; font-size: 0.72rem; }
+</style>
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <div>
+                <h2 class="mb-1" style="color: #141413; font-weight: 700;">
+                    <i class="bi bi-person-circle"></i> {{ conversation.student_name }}
+                    <small class="text-muted" style="font-size: 1rem; font-weight: 400;">{{ conversation.student_class }}</small>
+                </h2>
+                <p class="text-muted mb-0">在「{{ assistant.title }}」中的对话</p>
+            </div>
+            <div class="d-flex gap-2 flex-wrap">
+                <a href="{{ url_for('assistant_audit', assistant_id=assistant.id) }}" class="btn btn-secondary btn-sm">
+                    <i class="bi bi-arrow-left"></i> 返回审计
+                </a>
+                <button class="btn btn-sm btn-outline-{{ 'success' if conversation.is_blocked else 'danger' }}" id="btn-block">
+                    {{ '解禁该学生' if conversation.is_blocked else '封禁该学生' }}
+                </button>
+            </div>
+        </div>
+
+        <!-- B8: 设备切换条（多个设备会话才显示） -->
+        <div id="device-switch-bar" class="device-switch-bar" style="display:none;">
+            <span class="text-muted small me-2"><i class="bi bi-phone"></i> 该学生在 <strong id="device-count">--</strong> 台设备上有独立会话：</span>
+            <div id="device-tabs" class="d-flex gap-2 flex-wrap" style="flex: 1 1 auto;"></div>
+        </div>
+
+        <!-- 概览 -->
+        <div class="row g-2 mb-3" style="font-size: 0.875rem;">
+            <div class="col-md-3 col-sm-6">
+                <div class="card"><div class="card-body py-2 px-3">
+                    <div class="text-muted">首次进入</div>
+                    <div style="font-weight:600;" id="info-started">{{ conversation.started_at.strftime('%Y-%m-%d %H:%M') if conversation.started_at else '—' }}</div>
+                </div></div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="card"><div class="card-body py-2 px-3">
+                    <div class="text-muted">最近活跃</div>
+                    <div style="font-weight:600;" id="info-last">--</div>
+                </div></div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="card"><div class="card-body py-2 px-3">
+                    <div class="text-muted">今日已用 / 上限</div>
+                    <div style="font-weight:600;" id="info-quota">--</div>
+                </div></div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="card"><div class="card-body py-2 px-3">
+                    <div class="text-muted">状态</div>
+                    <div style="font-weight:600;" id="info-status">--</div>
+                </div></div>
+            </div>
+        </div>
+
+        <!-- 消息流 -->
+        <div class="card">
+            <div class="card-header" style="background-color: #F7F4EC; border-bottom: 1px solid #E5E0D8; font-weight: 600;">
+                <i class="bi bi-chat-dots"></i> 消息流（共 <span id="msg-count">--</span> 条 · 每 5 秒自动刷新）
+            </div>
+            <div class="card-body" id="messages-area" style="background: #fafbfc; max-height: 70vh; overflow-y: auto;">
+                <div class="text-center text-muted py-4">加载中...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    const ASSISTANT_ID = {{ assistant.id }};
+    const CONV_ID = {{ conversation.id }};
+    const apiUrl = `/api/assistant/${ASSISTANT_ID}/audit/${CONV_ID}/messages`;
+    const area = document.getElementById('messages-area');
+    let lastIds = '';
+
+    function escapeHtml(s) {
+        return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    function renderMessage(m) {
+        const role = m.role || 'user';
+        const avatar = role === 'user' ? '我' : (role === 'system' ? '!' : 'AI');
+        let attachments = '';
+        if ((m.image_urls && m.image_urls.length) || (m.files && m.files.length) || m.generated_image_url) {
+            const imgs = (m.image_urls || []).map(u => `<img src="${u}" loading="lazy" onclick="window.open('${u}','_blank')">`).join('');
+            const files = (m.files || []).map(f => `<a href="${f.url}" target="_blank" class="audit-file-link"><i class="bi bi-paperclip"></i> ${escapeHtml(f.name)}</a>`).join('');
+            const genImg = m.generated_image_url ? `<img src="${m.generated_image_url}" loading="lazy" onclick="window.open('${m.generated_image_url}','_blank')" title="AI 生成">` : '';
+            attachments = `<div class="audit-attachments">${imgs}${genImg}${files}</div>`;
+        }
+        const kwBadge = m.triggered_keyword ? `<div class="kw-badge"><i class="bi bi-exclamation-triangle"></i> 命中 ${escapeHtml(m.triggered_keyword)}</div>` : '';
+        const content = `<pre>${escapeHtml(m.content || '')}</pre>`;
+        const time = `<div class="audit-time">${escapeHtml(m.created_at_full || '')}</div>`;
+        if (role === 'user') {
+            return `<div class="audit-msg-row user">
+                <div class="audit-avatar">${avatar}</div>
+                <div class="audit-msg-content">
+                    ${kwBadge}
+                    <div class="audit-bubble">${content}${attachments}</div>
+                    ${time}
+                </div>
+            </div>`;
+        }
+        if (role === 'system') {
+            return `<div class="audit-msg-row system">
+                <div class="audit-msg-content" style="align-items:center; max-width:80%;">
+                    ${kwBadge}
+                    <div class="audit-bubble">${content}</div>
+                    ${time}
+                </div>
+            </div>`;
+        }
+        let ratingBadge = '';
+        if (m.rating === 1) ratingBadge = '<div class="audit-rating up"><i class="bi bi-hand-thumbs-up-fill"></i> 学生觉得有用</div>';
+        else if (m.rating === -1) ratingBadge = '<div class="audit-rating down"><i class="bi bi-hand-thumbs-down-fill"></i> 学生觉得没用</div>';
+        return `<div class="audit-msg-row assistant">
+            <div class="audit-avatar">${avatar}</div>
+            <div class="audit-msg-content">
+                <div class="audit-bubble">${content}${attachments}</div>
+                ${ratingBadge}
+                ${time}
+            </div>
+        </div>`;
+    }
+
+    async function refresh() {
+        try {
+            const r = await fetch(apiUrl);
+            if (!r.ok) return;
+            const data = await r.json();
+            const conv = data.conversation;
+            const messages = data.messages || [];
+
+            document.getElementById('msg-count').textContent = messages.length;
+            document.getElementById('info-last').textContent = conv.last_active_at || '—';
+            document.getElementById('info-quota').textContent = `${conv.daily_used} / ${conv.daily_limit}`;
+            document.getElementById('info-status').innerHTML = conv.is_blocked
+                ? '<span class="badge bg-danger">已封禁</span>' : '<span class="badge bg-success">活跃</span>';
+
+            // B8 设备切换条
+            const siblings = data.sibling_sessions || [];
+            const bar = document.getElementById('device-switch-bar');
+            const tabsEl = document.getElementById('device-tabs');
+            if (siblings.length > 1) {
+                document.getElementById('device-count').textContent = siblings.length;
+                tabsEl.innerHTML = siblings.map((s, i) => {
+                    const cls = s.is_current ? 'device-tab current' : 'device-tab';
+                    const blocked = s.is_blocked ? '<i class="bi bi-slash-circle ms-1" title="已封禁"></i>' : '';
+                    const lastTime = s.last_active_at ? s.last_active_at.split(' ')[1] || s.last_active_at : '—';
+                    return s.is_current
+                        ? `<span class="${cls}">设备 ${i + 1}（本设备） · ${s.msg_count} 条 ${blocked}</span>`
+                        : `<a class="${cls}" href="/assistant/${ASSISTANT_ID}/audit/${s.id}">设备 ${i + 1} · ${s.msg_count} 条 · <span class="small">${lastTime}</span> ${blocked}</a>`;
+                }).join('');
+                bar.style.display = '';
+            } else {
+                bar.style.display = 'none';
+            }
+
+            // 仅在 ID 列表变化时刷新（避免抖动）
+            const idsKey = messages.map(m => m.id).join(',');
+            if (idsKey !== lastIds) {
+                lastIds = idsKey;
+                if (messages.length === 0) {
+                    area.innerHTML = '<div class="text-center text-muted py-4">这位学生还没有发送任何消息</div>';
+                } else {
+                    area.innerHTML = messages.map(renderMessage).join('');
+                    // 滚动到底
+                    area.scrollTop = area.scrollHeight;
+                }
+            }
+
+            // 更新封禁按钮文案
+            const btn = document.getElementById('btn-block');
+            btn.textContent = conv.is_blocked ? '解禁该学生' : '封禁该学生';
+            btn.classList.toggle('btn-outline-success', conv.is_blocked);
+            btn.classList.toggle('btn-outline-danger', !conv.is_blocked);
+        } catch (e) { console.error(e); }
+    }
+
+    document.getElementById('btn-block').addEventListener('click', function () {
+        const btn = this;
+        btn.disabled = true;
+        fetch(`/assistant/${ASSISTANT_ID}/audit/${CONV_ID}/block`, {method: 'POST'})
+            .then(r => r.json())
+            .then(d => { btn.disabled = false; if (d.success) refresh(); else alert(d.message); });
+    });
+
+    refresh();
+    setInterval(refresh, 5000);
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,14 @@
+{# OpenMentor 共享 Jinja2 宏 #}
+
+{# AI 导师头像组件 - 自动从 avatar_path 显示，否则显示首字母色块 #}
+{%- macro assistant_avatar(assistant, size='md', class='') -%}
+{%- set first_char = (assistant.title or '')[:1] | default('A', true) -%}
+{%- set hash_idx = (assistant.id | int) % 5 + 1 -%}
+{%- if assistant.avatar_path -%}
+<span class="om-avatar size-{{ size }} {{ class }}">
+    <img src="/{{ assistant.avatar_path }}" alt="{{ assistant.title }}">
+</span>
+{%- else -%}
+<span class="om-avatar size-{{ size }} om-avatar-initial-{{ hash_idx }} {{ class }}">{{ first_char }}</span>
+{%- endif -%}
+{%- endmacro -%}

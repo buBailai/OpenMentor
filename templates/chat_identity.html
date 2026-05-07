@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>{{ assistant.title }} - {{ get_app_name() }}</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='openmentor_logo.png') }}">
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#D97757" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#1F1E1B" media="(prefers-color-scheme: dark)">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="{{ assistant.title }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{% if assistant.avatar_path %}/{{ assistant.avatar_path }}{% else %}{{ url_for('static', filename='icons/apple-touch-icon.png') }}{% endif %}">
+    <script>
+        (function() {
+            try {
+                var t = localStorage.getItem('om-theme');
+                if (!t) t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+                document.documentElement.setAttribute('data-theme', t);
+            } catch (e) {}
+        })();
+    </script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-icons/bootstrap-icons.min.css') }}">
+    <style>
+        :root {
+            --om-cream: #F0EEE6;
+            --om-cream-soft: #F7F4EC;
+            --om-paper: #FFFFFF;
+            --om-ink: #141413;
+            --om-muted: #6B6760;
+            --om-subtle: #94918B;
+            --om-border: #E5E0D8;
+            --om-border-strong: #C9C3B8;
+            --om-clay: #D97757;
+            --om-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            --om-font-serif: 'Source Serif 4', 'Source Serif Pro', 'Tiempos', 'Noto Serif SC', 'Songti SC', serif;
+        }
+        html[data-theme="dark"] {
+            --om-cream: #1F1E1B;
+            --om-cream-soft: #26241F;
+            --om-paper: #2A2722;
+            --om-ink: #EDE8DD;
+            --om-muted: #94918B;
+            --om-subtle: #6B6760;
+            --om-border: #3A362F;
+            --om-border-strong: #4A453C;
+            --om-clay: #E89878;
+        }
+        * { box-sizing: border-box; font-family: var(--om-font-sans); }
+        body {
+            margin: 0;
+            background: var(--om-cream);
+            min-height: 100vh;
+            display: flex; align-items: center; justify-content: center;
+            -webkit-font-smoothing: antialiased;
+            color: var(--om-ink);
+            padding: 1rem;
+        }
+        .card-wrap {
+            width: 100%; max-width: 460px;
+            background: var(--om-paper);
+            border: 1px solid var(--om-border);
+            border-radius: 14px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(20, 17, 12, 0.04);
+        }
+        .header { padding: 2.25rem 2rem 1.25rem; }
+        .brand-mark { width: 48px; height: 48px; object-fit: contain; margin-bottom: 1rem; display: block; }
+        h1 {
+            font-family: var(--om-font-serif);
+            font-weight: 500;
+            font-size: 1.5rem;
+            color: var(--om-ink);
+            margin: 0 0 0.5rem 0;
+            letter-spacing: -0.025em;
+            line-height: 1.2;
+        }
+        .subtitle { color: var(--om-muted); font-size: 0.92rem; line-height: 1.55; margin: 0; }
+        .form-wrap { padding: 0.5rem 2rem 1.75rem; }
+        .form-label { font-weight: 500; color: var(--om-ink); margin-bottom: 0.4rem; font-size: 0.9rem; }
+        .form-control {
+            padding: 0.625rem 0.875rem;
+            border: 1px solid var(--om-border-strong);
+            border-radius: 10px;
+            background: var(--om-paper);
+            color: var(--om-ink);
+            font-size: 0.95rem;
+        }
+        .form-control:focus {
+            border-color: var(--om-ink);
+            box-shadow: 0 0 0 3px rgba(20, 17, 12, 0.06);
+            outline: none;
+        }
+        .form-control::placeholder { color: var(--om-subtle); }
+        .btn-primary {
+            background: var(--om-ink);
+            border: 1px solid var(--om-ink);
+            color: var(--om-cream-soft);
+            font-weight: 500;
+            padding: 0.7rem 1rem;
+            border-radius: 999px;
+            font-size: 0.95rem;
+            transition: background 0.15s ease;
+        }
+        .btn-primary:hover { background: #2D2A24; border-color: #2D2A24; color: var(--om-cream-soft); }
+        .footer-note {
+            padding: 0.875rem 2rem;
+            background: var(--om-cream-soft);
+            color: var(--om-muted);
+            font-size: 0.78rem;
+            text-align: center;
+            border-top: 1px solid var(--om-border);
+        }
+        .alert-info {
+            background: var(--om-cream-soft);
+            border: 1px solid var(--om-border);
+            color: var(--om-ink);
+            padding: 0.625rem 0.875rem;
+            border-radius: 10px;
+            font-size: 0.875rem;
+            margin-bottom: 1rem;
+        }
+        .flash-msg {
+            background: #F5EDD8;
+            color: #8C6A0A;
+            padding: 0.625rem 0.875rem;
+            border-radius: 10px;
+            font-size: 0.875rem;
+            margin-bottom: 0.875rem;
+            border: 1px solid rgba(184, 134, 11, 0.25);
+        }
+    </style>
+</head>
+<body>
+    <div class="card-wrap">
+        <div class="header">
+            {% if assistant.avatar_path %}
+            <img src="/{{ assistant.avatar_path }}" alt="{{ assistant.title }}" class="brand-mark" style="border-radius: 50%; border: 1px solid var(--om-border); object-fit: cover;">
+            {% else %}
+            <img src="{{ url_for('static', filename='openmentor_logo.png') }}" alt="OpenMentor" class="brand-mark">
+            {% endif %}
+            <h1>{{ assistant.title }}</h1>
+            {% if assistant.description %}
+            <p class="subtitle">{{ assistant.description }}</p>
+            {% else %}
+            <p class="subtitle">填写班级和姓名即可开始对话。</p>
+            {% endif %}
+        </div>
+        <div class="form-wrap">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% for category, message in messages %}
+                <div class="flash-msg"><i class="bi bi-exclamation-triangle"></i> {{ message }}</div>
+                {% endfor %}
+            {% endwith %}
+
+            {% if roster and roster.mode == 'strict' and roster.classes %}
+            <form method="POST" action="{{ url_for('chat_identify', task_id=assistant.task_id) }}" id="identity-form" class="om-identity-form">
+                <div class="alert-info" style="margin-bottom: 0.875rem;">
+                    <i class="bi bi-shield-check"></i> 老师已开启花名册校验：请从下拉中选择你的班级和姓名。
+                </div>
+                <div class="mb-3">
+                    <label for="student_class" class="form-label">班级</label>
+                    <select class="form-control" id="student_class" name="student_class" required>
+                        <option value="">— 请选择班级 —</option>
+                        {% for cls in roster.classes %}
+                        <option value="{{ cls }}">{{ cls }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label for="student_name" class="form-label">姓名</label>
+                    <select class="form-control" id="student_name" name="student_name" required disabled>
+                        <option value="">— 请先选择班级 —</option>
+                    </select>
+                </div>
+                <input type="hidden" name="device_uuid" class="om-device-uuid">
+                <button type="submit" class="btn btn-primary w-100 mt-3">开始对话</button>
+            </form>
+            <script>
+                (function () {
+                    var STUDENTS = {{ roster.students_by_class | tojson }};
+                    var classSel = document.getElementById('student_class');
+                    var nameSel = document.getElementById('student_name');
+                    classSel.addEventListener('change', function () {
+                        var cls = this.value;
+                        nameSel.innerHTML = '';
+                        if (!cls || !STUDENTS[cls]) {
+                            nameSel.disabled = true;
+                            nameSel.innerHTML = '<option value="">— 请先选择班级 —</option>';
+                            return;
+                        }
+                        nameSel.disabled = false;
+                        var head = document.createElement('option');
+                        head.value = ''; head.textContent = '— 请选择姓名 —';
+                        nameSel.appendChild(head);
+                        STUDENTS[cls].forEach(function (n) {
+                            var opt = document.createElement('option');
+                            opt.value = n; opt.textContent = n;
+                            nameSel.appendChild(opt);
+                        });
+                    });
+                })();
+            </script>
+            {% elif roster and roster.mode == 'strict' %}
+            <div class="alert-info">
+                <i class="bi bi-exclamation-triangle"></i> 老师启用了花名册校验，但花名册中暂无学生数据。请联系老师在「班级花名册」中导入或添加学生后重试。
+            </div>
+            {% elif class_options %}
+            <!-- B9: 自由填写 + 老师配了班级选项 → 下拉选班级（带或不带年级层），姓名手填 -->
+            <form method="POST" action="{{ url_for('chat_identify', task_id=assistant.task_id) }}" class="om-identity-form" id="identity-form">
+                {% if class_options.has_grade_dim %}
+                <div class="mb-3">
+                    <label for="student_grade" class="form-label">年级</label>
+                    <select class="form-control" id="student_grade" required>
+                        <option value="">— 请选择年级 —</option>
+                        {% for g in class_options.grades %}
+                        <option value="{{ g }}">{{ g }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label for="student_class_part" class="form-label">班级</label>
+                    <select class="form-control" id="student_class_part" required disabled>
+                        <option value="">— 请先选择年级 —</option>
+                    </select>
+                </div>
+                {% else %}
+                <div class="mb-3">
+                    <label for="student_class_part" class="form-label">班级</label>
+                    <select class="form-control" id="student_class_part" required>
+                        <option value="">— 请选择班级 —</option>
+                        {% for cn in class_options.flat_classes %}
+                        <option value="{{ cn }}">{{ cn }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
+                <div class="mb-3">
+                    <label for="student_name" class="form-label">姓名</label>
+                    <input type="text" class="form-control" id="student_name" name="student_name"
+                           required maxlength="100"
+                           placeholder="例如：张三"
+                           autocomplete="off">
+                </div>
+                <input type="hidden" name="student_class" id="student_class">
+                <input type="hidden" name="device_uuid" class="om-device-uuid">
+                <button type="submit" class="btn btn-primary w-100 mt-3">开始对话</button>
+            </form>
+            <script>
+                (function () {
+                    var HAS_GRADE_DIM = {{ 'true' if class_options.has_grade_dim else 'false' }};
+                    var CLASSES_BY_GRADE = {{ class_options.classes_by_grade | tojson }};
+                    var classPartSel = document.getElementById('student_class_part');
+                    var hidden = document.getElementById('student_class');
+                    var form = document.getElementById('identity-form');
+
+                    if (HAS_GRADE_DIM) {
+                        var gradeSel = document.getElementById('student_grade');
+                        gradeSel.addEventListener('change', function () {
+                            var g = this.value;
+                            classPartSel.innerHTML = '';
+                            if (!g || !CLASSES_BY_GRADE[g]) {
+                                classPartSel.disabled = true;
+                                classPartSel.innerHTML = '<option value="">— 请先选择年级 —</option>';
+                                return;
+                            }
+                            classPartSel.disabled = false;
+                            var head = document.createElement('option');
+                            head.value = ''; head.textContent = '— 请选择班级 —';
+                            classPartSel.appendChild(head);
+                            CLASSES_BY_GRADE[g].forEach(function (cn) {
+                                var opt = document.createElement('option');
+                                opt.value = cn; opt.textContent = cn;
+                                classPartSel.appendChild(opt);
+                            });
+                        });
+                    }
+
+                    form.addEventListener('submit', function (e) {
+                        var classPart = classPartSel.value;
+                        if (!classPart) { e.preventDefault(); alert('请选择班级'); return; }
+                        if (HAS_GRADE_DIM) {
+                            var grade = document.getElementById('student_grade').value;
+                            if (!grade) { e.preventDefault(); alert('请选择年级'); return; }
+                            hidden.value = grade + ' ' + classPart;
+                        } else {
+                            hidden.value = classPart;
+                        }
+                    });
+                })();
+            </script>
+            {% else %}
+            <form method="POST" action="{{ url_for('chat_identify', task_id=assistant.task_id) }}" class="om-identity-form">
+                <div class="mb-3">
+                    <label for="student_class" class="form-label">班级</label>
+                    <input type="text" class="form-control" id="student_class" name="student_class"
+                           required maxlength="100"
+                           placeholder="例如：高一(3)班"
+                           autocomplete="off">
+                </div>
+                <div class="mb-3">
+                    <label for="student_name" class="form-label">姓名</label>
+                    <input type="text" class="form-control" id="student_name" name="student_name"
+                           required maxlength="100"
+                           placeholder="例如：张三"
+                           autocomplete="off">
+                </div>
+                <input type="hidden" name="device_uuid" class="om-device-uuid">
+                <button type="submit" class="btn btn-primary w-100 mt-3">开始对话</button>
+            </form>
+            {% endif %}
+        </div>
+        <div class="footer-note">
+            {{ get_app_name() }} · 让每个老师都有自己的开源 AI 导师
+        </div>
+    </div>
+    <!-- B8 设备隔离：localStorage 生成稳定 device_uuid，提交时填入 hidden 字段 -->
+    <script>
+        (function () {
+            var KEY = 'om-device-uuid';
+            var uuid;
+            try {
+                uuid = localStorage.getItem(KEY);
+                if (!uuid) {
+                    if (window.crypto && crypto.randomUUID) {
+                        uuid = crypto.randomUUID();
+                    } else {
+                        // 兜底：自己拼一个 v4 风格 UUID
+                        uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+                            var r = (Math.random() * 16) | 0;
+                            var v = c === 'x' ? r : (r & 0x3) | 0x8;
+                            return v.toString(16);
+                        });
+                    }
+                    localStorage.setItem(KEY, uuid);
+                }
+            } catch (e) {
+                // localStorage 被禁用（隐私模式）→ 退化为旧逻辑（不传 uuid）
+                uuid = '';
+            }
+            var inputs = document.querySelectorAll('input.om-device-uuid');
+            for (var i = 0; i < inputs.length; i++) inputs[i].value = uuid;
+        })();
+    </script>
+    <!-- PWA 注册 -->
+    <script src="{{ url_for('static', filename='pwa-register.js') }}" defer></script>
+</body>
+</html>

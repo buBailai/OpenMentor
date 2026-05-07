@@ -1,0 +1,246 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import assistant_avatar %}
+
+{% block title %}对话审计 - {{ assistant.title }} - {{ get_app_name() }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-12">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <div class="d-flex align-items-center gap-3">
+                {{ assistant_avatar(assistant, size='lg') }}
+                <div>
+                    <h2 class="mb-1" style="color: var(--om-ink); font-weight: 700;">
+                        <i class="bi bi-eye"></i> 对话审计
+                    </h2>
+                    <p class="text-muted mb-0">{{ assistant.title }} · 实时刷新（每 8 秒）</p>
+                </div>
+            </div>
+            <div class="d-flex gap-2 flex-wrap">
+                <a href="{{ url_for('assistant_detail', assistant_id=assistant.id) }}" class="btn btn-secondary btn-sm">
+                    <i class="bi bi-arrow-left"></i> 返回详情
+                </a>
+                <a href="{{ url_for('assistant_audit_export', assistant_id=assistant.id) }}" class="btn btn-success btn-sm">
+                    <i class="bi bi-download"></i> 导出全部对话 Excel
+                </a>
+                <button class="btn btn-outline-primary btn-sm" id="btn-refresh">
+                    <i class="bi bi-arrow-clockwise"></i> 立即刷新
+                </button>
+            </div>
+        </div>
+
+        <!-- 统计卡片 -->
+        <div class="row g-3 mb-3">
+            <div class="col-md col-sm-6">
+                <div class="card text-center">
+                    <div class="card-body" style="padding: 1rem;">
+                        <div class="text-muted small mb-1">已对话学生</div>
+                        <div style="font-family: var(--om-font-serif); font-weight: 500; color: var(--om-ink); font-size: 1.875rem;" id="stat-conv">--</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md col-sm-6">
+                <div class="card text-center">
+                    <div class="card-body" style="padding: 1rem;">
+                        <div class="text-muted small mb-1">消息总数</div>
+                        <div style="font-family: var(--om-font-serif); font-weight: 500; color: var(--om-ink); font-size: 1.875rem;" id="stat-msg">--</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md col-sm-6">
+                <div class="card text-center">
+                    <div class="card-body" style="padding: 1rem;">
+                        <div class="text-muted small mb-1">满意度 <span class="text-muted small" id="stat-satis-detail" style="font-weight:400;"></span></div>
+                        <div style="font-family: var(--om-font-serif); font-weight: 500; color: var(--om-success); font-size: 1.875rem;" id="stat-satis">--</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md col-sm-6">
+                <div class="card text-center">
+                    <div class="card-body" style="padding: 1rem;">
+                        <div class="text-muted small mb-1">黑名单触发</div>
+                        <div style="font-family: var(--om-font-serif); font-weight: 500; color: var(--om-danger); font-size: 1.875rem;" id="stat-blocked">--</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md col-sm-6">
+                <div class="card text-center">
+                    <div class="card-body" style="padding: 1rem;">
+                        <div class="text-muted small mb-1">助学状态</div>
+                        <div style="font-weight: 500; font-size: 1.0rem; padding-top: 0.6rem;" id="stat-status">--</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 学生会话列表 -->
+        <div class="card">
+            <div class="card-header" style="background-color: #F7F4EC; border-bottom: 1px solid #E5E0D8; font-weight: 600;">
+                <i class="bi bi-people"></i> 学生会话 <span id="last-update" class="text-muted small fw-normal ms-2"></span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead style="background-color: #F7F4EC;">
+                            <tr>
+                                <th style="font-size: 0.875rem; color: #6B6760;">班级 / 姓名</th>
+                                <th style="font-size: 0.875rem; color: #6B6760;">消息</th>
+                                <th style="font-size: 0.875rem; color: #6B6760;">今日额度</th>
+                                <th style="font-size: 0.875rem; color: #6B6760;">最近活动</th>
+                                <th style="font-size: 0.875rem; color: #6B6760;">最后内容预览</th>
+                                <th style="font-size: 0.875rem; color: #6B6760;">状态</th>
+                                <th style="font-size: 0.875rem; color: #6B6760; text-align: right;">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="conv-tbody">
+                            <tr><td colspan="7" class="text-center text-muted py-4">加载中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    const ASSISTANT_ID = {{ assistant.id }};
+    const apiUrl = `/api/assistant/${ASSISTANT_ID}/audit/conversations`;
+    const tbody = document.getElementById('conv-tbody');
+    const lastUpdate = document.getElementById('last-update');
+
+    function escapeHtml(s) {
+        return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    async function refresh() {
+        try {
+            const r = await fetch(apiUrl);
+            if (!r.ok) return;
+            const data = await r.json();
+
+            // 更新统计
+            const stuCount = data.stats.student_count || data.stats.conversation_count || 0;
+            const sessCount = data.stats.session_count || stuCount;
+            const stuConv = document.getElementById('stat-conv');
+            stuConv.textContent = stuCount;
+            // 如果有学生在多设备上 → 旁边小字提示
+            const existingHint = stuConv.parentElement.querySelector('.stat-hint');
+            if (existingHint) existingHint.remove();
+            if (sessCount > stuCount) {
+                const hint = document.createElement('div');
+                hint.className = 'stat-hint text-muted';
+                hint.style.cssText = 'font-size:0.7rem; margin-top:0.2rem;';
+                hint.textContent = `共 ${sessCount} 个设备会话`;
+                stuConv.parentElement.appendChild(hint);
+            }
+            document.getElementById('stat-msg').textContent = data.stats.total_messages;
+            document.getElementById('stat-blocked').textContent = data.stats.blocked_hits;
+            // 满意度
+            const satisEl = document.getElementById('stat-satis');
+            const satisDetail = document.getElementById('stat-satis-detail');
+            const up = data.stats.thumbs_up || 0;
+            const down = data.stats.thumbs_down || 0;
+            const pct = data.stats.satisfaction_pct;
+            if (up + down === 0) {
+                satisEl.textContent = '—';
+                satisEl.style.color = 'var(--om-muted)';
+                satisDetail.textContent = '暂无评分';
+            } else {
+                satisEl.textContent = (pct == null ? '—' : pct + '%');
+                satisEl.style.color = (pct >= 70) ? 'var(--om-success)' : (pct >= 40 ? 'var(--om-warn)' : 'var(--om-danger)');
+                satisDetail.innerHTML = `👍 ${up} / 👎 ${down}`;
+            }
+            const statusEl = document.getElementById('stat-status');
+            const status = data.assistant.status;
+            statusEl.innerHTML = status === 'active'
+                ? '<span class="badge bg-success">启用中</span>'
+                : (status === 'disabled' ? '<span class="badge bg-danger">已禁用</span>' : '<span class="badge bg-secondary">未知</span>');
+
+            // 更新表格（B8：按学生身份聚合，多设备折叠成一行 + 设备徽章）
+            const students = data.students || [];
+            if (students.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">还没有学生进入对话。让学生扫码试试吧 →</td></tr>`;
+            } else {
+                tbody.innerHTML = students.map(s => {
+                    const blockedBadge = s.blocked_hits > 0 ? `<span class="badge bg-warning text-dark ms-1" title="该学生有 ${s.blocked_hits} 条触发黑名单"><i class="bi bi-exclamation-triangle"></i> ${s.blocked_hits}</span>` : '';
+                    const stuBlocked = s.is_blocked_any ? '<span class="badge bg-danger ms-1">已封禁</span>' : '';
+                    const deviceBadge = s.session_count > 1
+                        ? `<span class="badge ms-1" style="background:var(--om-clay-soft); color:var(--om-clay-deep); font-weight:500;" title="该学生在 ${s.session_count} 台设备上有独立会话"><i class="bi bi-phone"></i> ${s.session_count} 台</span>`
+                        : '';
+                    const roleIcon = s.last_role === 'user'
+                        ? '<i class="bi bi-person"></i>'
+                        : (s.last_role === 'assistant' ? '<i class="bi bi-robot"></i>' : '<i class="bi bi-info-circle"></i>');
+                    const lastBubble = s.last_content
+                        ? `<div style="font-size:0.825rem; color:#6B6760; max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(s.last_content)}">${roleIcon} ${escapeHtml(s.last_content)}</div>`
+                        : '<span class="text-muted small">—</span>';
+                    // 单/多设备都走最近一次会话；多设备时详情页头部会显示设备切换条
+                    const detailHref = `/assistant/${ASSISTANT_ID}/audit/${s.primary_session_id}`;
+                    // 多设备封禁/解禁：调用聚合接口；单设备：维持原 conv 接口
+                    const blockOnclick = s.session_count > 1
+                        ? `toggleBlockStudentByName(${JSON.stringify(s.student_class)}, ${JSON.stringify(s.student_name)}, ${s.is_blocked_any ? 'true' : 'false'}, this)`
+                        : `toggleBlockStudent(${s.primary_session_id}, this)`;
+                    return `
+                    <tr>
+                        <td>
+                            <div style="font-weight:600; color:var(--om-ink);">${escapeHtml(s.student_name)}${deviceBadge}</div>
+                            <div style="font-size:0.75rem; color:var(--om-muted);">${escapeHtml(s.student_class)}</div>
+                        </td>
+                        <td><span style="font-weight:600;">${s.user_msg_count}</span> ${blockedBadge}</td>
+                        <td><span class="${s.daily_message_count >= s.daily_limit ? 'text-danger' : (s.daily_message_count >= s.daily_limit - 5 ? 'text-warning' : 'text-muted')}">${s.daily_message_count} / ${s.daily_limit}</span></td>
+                        <td><small class="text-muted">${escapeHtml(s.last_active_at || '—')}</small></td>
+                        <td>${lastBubble}</td>
+                        <td>${stuBlocked || '<span class="badge bg-success">活跃</span>'}</td>
+                        <td style="text-align:right;">
+                            <a href="${detailHref}" class="btn btn-sm btn-outline-primary">查看对话</a>
+                            <button class="btn btn-sm btn-outline-${s.is_blocked_any ? 'success' : 'danger'} ms-1"
+                                    onclick='${blockOnclick}' title="${s.is_blocked_any ? '解禁该学生' : '封禁该学生'}">
+                                ${s.is_blocked_any ? '解禁' : '封禁'}
+                            </button>
+                        </td>
+                    </tr>`;
+                }).join('');
+            }
+            const now = new Date();
+            lastUpdate.textContent = `· 更新于 ${now.toLocaleTimeString('zh-CN')}`;
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    window.toggleBlockStudent = function (convId, btn) {
+        btn.disabled = true;
+        fetch(`/assistant/${ASSISTANT_ID}/audit/${convId}/block`, {method: 'POST'})
+            .then(r => r.json())
+            .then(d => {
+                if (d.success) refresh();
+                else { alert(d.message || '失败'); btn.disabled = false; }
+            })
+            .catch(() => { alert('网络异常'); btn.disabled = false; });
+    };
+
+    // B8: 多设备的学生整体封禁/解禁
+    window.toggleBlockStudentByName = function (className, studentName, currentlyBlocked, btn) {
+        if (!confirm(currentlyBlocked
+            ? `确定解禁 ${className} · ${studentName} 在所有设备上的会话吗？`
+            : `确定封禁 ${className} · ${studentName} 在所有设备上的会话吗？`)) return;
+        btn.disabled = true;
+        const fd = new FormData();
+        fd.append('class_name', className);
+        fd.append('student_name', studentName);
+        fd.append('action', currentlyBlocked ? 'unblock' : 'block');
+        fetch(`/assistant/${ASSISTANT_ID}/audit/student/block`, {method: 'POST', body: fd})
+            .then(r => r.json())
+            .then(d => {
+                if (d.success) refresh();
+                else { alert(d.message || '失败'); btn.disabled = false; }
+            })
+            .catch(() => { alert('网络异常'); btn.disabled = false; });
+    };
+
+    document.getElementById('btn-refresh').addEventListener('click', refresh);
+    refresh();
+    setInterval(refresh, 8000);
+})();
+</script>
+{% endblock %}

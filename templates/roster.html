@@ -1,0 +1,203 @@
+{% extends 'base.html' %}
+
+{% block title %}班级花名册 - {{ get_app_name() }}{% endblock %}
+
+{% block styles %}
+{{ super() }}
+<style>
+    .om-roster-class-card { border: 1px solid var(--om-border); border-radius: var(--om-radius); overflow: hidden; }
+    .om-roster-class-card .card-header { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+    .om-roster-class-title { font-weight: 600; color: var(--om-ink); }
+    .om-roster-table { font-size: 0.92rem; }
+    .om-roster-table th { background: var(--om-cream-soft); color: var(--om-muted); font-weight: 500; font-size: 0.85rem; }
+    .om-roster-table td { vertical-align: middle; }
+    .om-roster-empty { padding: 3rem 1.5rem; text-align: center; color: var(--om-muted); }
+    .om-import-card { border: 1px dashed var(--om-border-strong); border-radius: var(--om-radius); padding: 1.25rem; background: var(--om-cream-soft); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-12">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <div>
+                <h2 class="mb-1" style="font-family: var(--om-font-serif); font-weight: 500; color: var(--om-ink); letter-spacing: -0.01em;">班级花名册</h2>
+                <p class="mb-0 text-muted small">
+                    共 <strong>{{ total }}</strong> 名学生 · {{ grouped|length }} 个班级
+                    {% if strict_assistants %} · 当前有 <strong>{{ strict_assistants }}</strong> 个 AI 导师启用了花名册校验{% endif %}
+                </p>
+            </div>
+            <div class="d-flex gap-2 flex-wrap">
+                <a href="{{ url_for('roster_template') }}" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-file-earmark-arrow-down"></i> 下载模板
+                </a>
+                {% if total %}
+                <a href="{{ url_for('roster_export') }}" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-box-arrow-up"></i> 导出 Excel
+                </a>
+                <form method="POST" action="{{ url_for('roster_clear') }}" class="m-0"
+                      onsubmit="return confirm('确定清空所有班级花名册？此操作不可恢复。');">
+                    <button type="submit" class="btn btn-outline-danger btn-sm">
+                        <i class="bi bi-trash"></i> 清空全部
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- B9: 自由填写模式班级选项配置 -->
+        <div class="card mb-4" id="class-options" style="border: 1px solid var(--om-border); border-radius: var(--om-radius);">
+            <div class="card-header" style="background: var(--om-cream-soft);">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <i class="bi bi-list-check"></i>
+                        <strong>自由填写模式 — 班级选项</strong>
+                        <span class="text-muted small ms-2">仅 AI 导师为「自由填写」模式时生效；学生从下拉中选班级，不再手填</span>
+                    </div>
+                    <div class="text-muted small">
+                        当前：{% if class_options_count %}<strong style="color:var(--om-clay-deep);">已启用</strong>（{{ class_options_count }} 个班级）{% else %}未配置（学生仍需手填班级）{% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('class_options_save') }}">
+                    <div class="form-text text-muted small mb-2">
+                        每行一组。<strong>带年级</strong> 写：<code>高一: 1班, 2班, 3班</code>；<strong>不带年级</strong>（单层下拉）每行写一个班级，例如直接写 <code>三年(1)班</code>。多个班级之间用中英文逗号或顿号都行。
+                    </div>
+                    <textarea name="class_options_text" class="form-control" rows="6"
+                              placeholder="例：&#10;高一: 1班, 2班, 3班, 4班&#10;高二: 1班, 2班, 3班&#10;&#10;或不带年级直接写：&#10;三年(1)班&#10;三年(2)班"
+                              style="font-family: var(--om-font-mono); font-size: 0.92rem;">{{ class_options_text }}</textarea>
+                    <div class="d-flex gap-2 mt-2 flex-wrap">
+                        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-save"></i> 保存配置</button>
+                        {% if class_options_count %}
+                        <button type="submit" form="class-options-clear-form" class="btn btn-outline-danger btn-sm"
+                                onclick="return confirm('确定清空全部班级选项？清空后自由填写模式下学生将回到手填班级。');">
+                            <i class="bi bi-trash"></i> 清空配置
+                        </button>
+                        {% endif %}
+                    </div>
+                </form>
+                {% if class_options_count %}
+                <form id="class-options-clear-form" method="POST" action="{{ url_for('class_options_clear') }}" style="display:none;"></form>
+                {% endif %}
+
+                {% if class_options %}
+                <hr class="my-3">
+                <div class="text-muted small mb-1">当前已生效的下拉选项：</div>
+                <div>
+                    {% set _grouped = {} %}
+                    {% for o in class_options %}
+                        {% set _key = o.grade or '__no_grade__' %}
+                        {% set _ = _grouped.setdefault(_key, []).append(o) %}
+                    {% endfor %}
+                    {% for grade, items in _grouped.items() %}
+                    <div class="mb-1">
+                        {% if grade != '__no_grade__' %}<strong style="color: var(--om-ink);">{{ grade }}</strong>：{% endif %}
+                        {% for it in items %}
+                        <span class="badge me-1 mb-1" style="background: var(--om-cream-warm); color: var(--om-ink); font-weight: 500; padding: 0.35rem 0.6rem;">{{ it.class_name }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- 上传 + 添加 -->
+        <div class="row g-3 mb-4">
+            <div class="col-lg-7">
+                <div class="om-import-card h-100">
+                    <h5 style="font-weight: 600; color: var(--om-ink);"><i class="bi bi-cloud-upload"></i> 批量导入</h5>
+                    <p class="text-muted small mb-3">支持 .xlsx / .xls / .csv；表头需要包含「班级」「姓名」两列，可选「学号」「备注」。</p>
+                    <form method="POST" action="{{ url_for('roster_import') }}" enctype="multipart/form-data" class="d-flex flex-wrap gap-2 align-items-end">
+                        <div style="flex: 1 1 220px;">
+                            <label class="form-label small text-muted mb-1">花名册文件</label>
+                            <input type="file" class="form-control form-control-sm" name="file" accept=".xlsx,.xls,.csv" required>
+                        </div>
+                        <div>
+                            <label class="form-label small text-muted mb-1">导入方式</label>
+                            <select name="import_mode" class="form-select form-select-sm">
+                                <option value="merge" selected>合并（保留已有，按班级+姓名去重）</option>
+                                <option value="replace">替换（先清空再导入）</option>
+                            </select>
+                        </div>
+                        <div>
+                            <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-upload"></i> 导入</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            <div class="col-lg-5">
+                <div class="om-import-card h-100">
+                    <h5 style="font-weight: 600; color: var(--om-ink);"><i class="bi bi-person-plus"></i> 手动添加</h5>
+                    <form method="POST" action="{{ url_for('roster_add') }}" class="row g-2">
+                        <div class="col-6"><input type="text" class="form-control form-control-sm" name="class_name" placeholder="班级 *" required maxlength="100"></div>
+                        <div class="col-6"><input type="text" class="form-control form-control-sm" name="student_name" placeholder="姓名 *" required maxlength="100"></div>
+                        <div class="col-6"><input type="text" class="form-control form-control-sm" name="student_no" placeholder="学号（可选）" maxlength="50"></div>
+                        <div class="col-6"><input type="text" class="form-control form-control-sm" name="notes" placeholder="备注（可选）" maxlength="200"></div>
+                        <div class="col-12">
+                            <button type="submit" class="btn btn-outline-primary btn-sm w-100"><i class="bi bi-plus-circle"></i> 添加学生</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- 花名册列表 -->
+        {% if grouped %}
+            {% for class_name, items in grouped.items() %}
+            <div class="om-roster-class-card mb-3">
+                <div class="card-header">
+                    <span class="om-roster-class-title"><i class="bi bi-mortarboard me-1"></i>{{ class_name }}
+                        <span class="text-muted small ms-1">{{ items|length }} 人</span>
+                    </span>
+                    <form method="POST" action="{{ url_for('roster_clear_class') }}" class="m-0"
+                          onsubmit="return confirm('确定删除班级「{{ class_name }}」的全部 {{ items|length }} 名学生？');">
+                        <input type="hidden" name="class_name" value="{{ class_name }}">
+                        <button type="submit" class="btn btn-link btn-sm text-danger"><i class="bi bi-x-circle"></i> 删除整班</button>
+                    </form>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 om-roster-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 25%;">姓名</th>
+                                <th style="width: 25%;">学号</th>
+                                <th>备注</th>
+                                <th style="width: 110px;">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for e in items %}
+                            <tr>
+                                <td><strong>{{ e.student_name }}</strong></td>
+                                <td>{{ e.student_no or '—' }}</td>
+                                <td class="text-muted small">{{ e.notes or '' }}</td>
+                                <td>
+                                    <form method="POST" action="{{ url_for('roster_delete', entry_id=e.id) }}"
+                                          onsubmit="return confirm('删除「{{ e.class_name }} · {{ e.student_name }}」？');" class="m-0">
+                                        <button type="submit" class="btn btn-sm btn-link text-danger p-0">
+                                            <i class="bi bi-trash"></i> 删除
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+        <div class="card" style="border: 2px dashed var(--om-border-strong); border-radius: var(--om-radius);">
+            <div class="om-roster-empty">
+                <i class="bi bi-people" style="font-size: 2.5rem; color: var(--om-subtle);"></i>
+                <h5 class="mt-3" style="color: var(--om-ink); font-weight: 600;">还没有学生</h5>
+                <p class="mb-3">下载模板填好后批量导入，或在上方手动添加；启用花名册校验后学生只能从下拉中选择身份。</p>
+                <a href="{{ url_for('roster_template') }}" class="btn btn-outline-primary btn-sm"><i class="bi bi-file-earmark-arrow-down"></i> 下载花名册模板</a>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

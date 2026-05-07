@@ -1,0 +1,261 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import assistant_avatar %}
+
+{% block title %}{{ assistant.title }} - {{ get_app_name() }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div class="d-flex align-items-center gap-3">
+                {{ assistant_avatar(assistant, size='xl') }}
+                <div>
+                    <h2 class="mb-1" style="color: var(--om-ink); font-weight: 700;">
+                        {{ assistant.title }}
+                    </h2>
+                    {% if assistant.description %}
+                    <p class="text-muted mb-0">{{ assistant.description }}</p>
+                    {% endif %}
+                </div>
+            </div>
+            <div>
+                {% if is_expired %}
+                    <span class="badge fs-6" style="background-color: #6B6760; padding: 0.5rem 0.875rem;">链接已过期</span>
+                {% elif assistant.status == 'disabled' %}
+                    <span class="badge fs-6" style="background-color: #B8463E; padding: 0.5rem 0.875rem;">已禁用</span>
+                {% else %}
+                    <span class="badge fs-6" style="background-color: #5B7553; padding: 0.5rem 0.875rem;">启用中</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="d-flex gap-2 mb-4 flex-wrap">
+            <a href="{{ url_for('assistant_list') }}" class="btn btn-secondary btn-sm">
+                <i class="bi bi-arrow-left"></i> 返回列表
+            </a>
+            <a href="{{ url_for('assistant_audit', assistant_id=assistant.id) }}" class="btn btn-primary btn-sm">
+                <i class="bi bi-eye"></i> 对话审计 ({{ conv_count }} 学生)
+            </a>
+            <a href="{{ url_for('assistant_edit', assistant_id=assistant.id) }}" class="btn btn-outline-primary btn-sm">
+                <i class="bi bi-pencil"></i> 编辑
+            </a>
+            <button class="btn btn-outline-{{ 'danger' if assistant.status == 'active' else 'success' }} btn-sm" onclick="toggleAssistant({{ assistant.id }})">
+                <i class="bi bi-{{ 'pause-fill' if assistant.status == 'active' else 'play-fill' }}"></i>
+                {{ '禁用（紧急熔断）' if assistant.status == 'active' else '启用' }}
+            </button>
+            <a href="{{ url_for('assistant_export_template', assistant_id=assistant.id) }}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-box-arrow-up"></i> 导出模板
+            </a>
+            <form method="POST" action="{{ url_for('assistant_clone', assistant_id=assistant.id) }}" style="display: inline;">
+                <button type="submit" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-files"></i> 克隆
+                </button>
+            </form>
+        </div>
+
+        <!-- 学生链接卡片 -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-link-45deg me-1"></i>学生访问链接
+            </div>
+            <div class="card-body">
+                <div class="row g-4 align-items-center">
+                    <div class="col-md-7">
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold small text-muted">链接地址</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="student-url" readonly value="{{ student_url }}" style="font-family: monospace;">
+                                <button class="btn btn-secondary" onclick="copyUrl()">
+                                    <i class="bi bi-clipboard"></i> 复制
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="row g-2 mb-2">
+                            <div class="col-6">
+                                <small class="text-muted d-block">链接有效期至</small>
+                                <strong style="color: #141413;">
+                                    {% if assistant.link_expires_at %}
+                                        {{ assistant.link_expires_at.strftime('%Y-%m-%d %H:%M') }}
+                                    {% else %}
+                                        未设置
+                                    {% endif %}
+                                </strong>
+                            </div>
+                            <div class="col-6">
+                                <small class="text-muted d-block">每生每日上限</small>
+                                <strong style="color: #141413;">{{ assistant.max_messages_per_student_daily or 50 }} 条</strong>
+                            </div>
+                        </div>
+
+                        <div class="alert alert-info mb-0 small" style="padding: 0.625rem 0.875rem;">
+                            <i class="bi bi-info-circle me-1"></i>
+                            学生需在同一局域网/校园网内才能访问。
+                            {% if assistant.roster_mode == 'strict' %}
+                            老师已启用<a href="{{ url_for('roster_index') }}" target="_blank" rel="noopener">花名册校验</a>，学生需从下拉中选择班级和姓名。
+                            {% else %}
+                            打开链接后填写「班级 + 姓名」即可开始对话。
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="col-md-5 text-center">
+                        <div id="qrcode" style="display: inline-block; padding: 0.5rem; background: white; border: 1px solid #E5E0D8; border-radius: 8px;"></div>
+                        <div class="mt-2">
+                            <small class="text-muted">学生扫码进入</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 配置概览 -->
+        <div class="row g-3 mb-4">
+            <div class="col-md-3 col-sm-6">
+                <div class="card text-center">
+                    <div class="card-body" style="padding: 1rem 0.5rem;">
+                        <div class="text-muted small mb-1">使用模型</div>
+                        <div style="font-weight: 600; color: #141413;">
+                            {{ model_capabilities.get(assistant.selected_model_name, {}).get('label', assistant.selected_model_name or '默认') }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="card text-center">
+                    <div class="card-body" style="padding: 1rem 0.5rem;">
+                        <div class="text-muted small mb-1">已对话学生</div>
+                        <div style="font-weight: 600; color: #141413; font-size: 1.5rem;">{{ conv_count }}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="card text-center">
+                    <div class="card-body" style="padding: 1rem 0.5rem;">
+                        <div class="text-muted small mb-1">消息总数</div>
+                        <div style="font-weight: 600; color: #141413; font-size: 1.5rem;">{{ msg_count }}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="card text-center">
+                    <div class="card-body" style="padding: 1rem 0.5rem;">
+                        <div class="text-muted small mb-1">多模态</div>
+                        <div style="font-weight: 600; color: #141413; font-size: 0.875rem;">
+                            {% if assistant.allow_image_input %}<i class="bi bi-image text-primary" title="图片输入"></i>{% endif %}
+                            {% if assistant.allow_file_upload %}<i class="bi bi-paperclip text-primary ms-1" title="文件上传"></i>{% endif %}
+                            {% if assistant.allow_image_generation %}<i class="bi bi-magic text-primary ms-1" title="图片生成"></i>{% endif %}
+                            {% if not assistant.allow_image_input and not assistant.allow_file_upload and not assistant.allow_image_generation %}
+                            <span class="text-muted">仅文字</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 系统提示词预览 -->
+        <div class="card mb-4">
+            <div class="card-header" style="background-color: #F7F4EC; border-bottom: 1px solid #E5E0D8; font-weight: 600;">
+                <i class="bi bi-chat-square-text me-1"></i>系统提示词
+            </div>
+            <div class="card-body">
+                {% if assistant.system_prompt %}
+                <pre class="mb-0" style="white-space: pre-wrap; font-family: inherit; font-size: 0.95rem; color: #2D2A24; background: #F7F4EC; padding: 0.875rem; border-radius: 6px; border: 1px solid #E5E0D8;">{{ assistant.system_prompt }}</pre>
+                {% else %}
+                <p class="text-muted fst-italic mb-0">暂未设置系统提示词</p>
+                {% endif %}
+
+                {% if assistant.welcome_message %}
+                <div class="mt-3">
+                    <div class="text-muted small mb-1">欢迎语：</div>
+                    <div style="background: #F7F4EC; padding: 0.625rem 0.875rem; border-radius: 6px; color: #141413;">{{ assistant.welcome_message }}</div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- 待加功能占位 -->
+        <div class="card mb-4" style="border: 1px dashed #C9C3B8;">
+            <div class="card-body text-center text-muted small" style="padding: 1.25rem;">
+                <i class="bi bi-info-circle"></i>
+                学生对话审计大屏 / 模板导出克隆 / AI 帮我写提示词 等功能将在后续 V1 版本陆续开放
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 加载 qrcodejs（QuickForm 已 vendored） -->
+<script src="{{ url_for('static', filename='vendor/qrcodejs/qrcode.min.js') }}"></script>
+<script>
+    // 生成二维码
+    document.addEventListener('DOMContentLoaded', function() {
+        var url = "{{ student_url }}";
+        new QRCode(document.getElementById('qrcode'), {
+            text: url,
+            width: 180,
+            height: 180,
+            correctLevel: QRCode.CorrectLevel.M
+        });
+    });
+
+    function copyUrl() {
+        var text = document.getElementById('student-url').value;
+        var ok = false;
+
+        // 1) 尝试现代 API（HTTPS / localhost 才可用）
+        if (window.isSecureContext && navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(function() {
+                showCopyToast('链接已复制 ✓');
+            }).catch(function() {
+                fallbackCopy(text);
+            });
+            return;
+        }
+
+        // 2) 降级：临时 textarea + execCommand（HTTP 局域网兼容）
+        fallbackCopy(text);
+    }
+
+    function fallbackCopy(text) {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        ta.setSelectionRange(0, ta.value.length);
+        try {
+            var ok = document.execCommand('copy');
+            showCopyToast(ok ? '链接已复制 ✓' : '复制失败，请手动选中复制', !ok);
+        } catch (e) {
+            showCopyToast('复制失败：' + e.message, true);
+        } finally {
+            document.body.removeChild(ta);
+        }
+    }
+
+    function showCopyToast(msg, isError) {
+        var existing = document.getElementById('copy-toast-popup');
+        if (existing) existing.remove();
+        var t = document.createElement('div');
+        t.id = 'copy-toast-popup';
+        t.textContent = msg;
+        t.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);' +
+            'padding:0.625rem 1.25rem;border-radius:999px;font-size:0.92rem;font-weight:500;' +
+            'box-shadow:0 8px 24px rgba(20,17,12,0.18);z-index:9999;' +
+            'background:' + (isError ? '#B8463E' : '#141413') + ';color:#F7F4EC;';
+        document.body.appendChild(t);
+        setTimeout(function() { if (t.parentNode) t.remove(); }, 1800);
+    }
+
+    function toggleAssistant(id) {
+        fetch(`/assistant/${id}/toggle`, {method: 'POST'})
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) location.reload();
+                else alert(data.message || '操作失败');
+            })
+            .catch(() => alert('网络错误'));
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,459 @@
+{% extends 'base.html' %}
+
+{% block title %}学情大屏 - {{ get_app_name() }}{% endblock %}
+
+{% block styles %}
+{{ super() }}
+<style>
+    .om-stat-card {
+        background: var(--om-paper);
+        border: 1px solid var(--om-border);
+        border-radius: var(--om-radius);
+        padding: 1rem 1.1rem;
+        text-align: left;
+    }
+    .om-stat-label { color: var(--om-muted); font-size: 0.82rem; margin-bottom: 0.25rem; }
+    .om-stat-value {
+        font-family: var(--om-font-serif); font-weight: 500; font-size: 1.6rem; color: var(--om-ink);
+        letter-spacing: -0.01em; line-height: 1.1;
+    }
+    .om-stat-detail { color: var(--om-muted); font-size: 0.78rem; margin-top: 0.2rem; }
+    .om-chart-card {
+        background: var(--om-paper);
+        border: 1px solid var(--om-border);
+        border-radius: var(--om-radius);
+        padding: 0.9rem 1rem 0.6rem;
+        margin-bottom: 1rem;
+    }
+    .om-chart-title { font-weight: 600; color: var(--om-ink); font-size: 0.95rem; margin-bottom: 0.4rem; }
+    .om-chart-sub { color: var(--om-muted); font-size: 0.78rem; margin-bottom: 0.4rem; }
+    .om-chart-empty { display: flex; align-items: center; justify-content: center; color: var(--om-subtle); height: 240px; font-size: 0.9rem; }
+    .om-filter-bar { background: var(--om-paper); border: 1px solid var(--om-border); border-radius: var(--om-radius); padding: 0.7rem 0.9rem; }
+    .om-filter-bar label { color: var(--om-muted); font-size: 0.8rem; margin-right: 0.5rem; margin-bottom: 0; white-space: nowrap; flex-shrink: 0; }
+    .om-filter-bar > div { min-width: 0; }
+    .om-filter-bar .form-select-sm { min-width: 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-12">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <div>
+                <h2 class="mb-1" style="font-family: var(--om-font-serif); font-weight: 500; color: var(--om-ink); letter-spacing: -0.01em;">学情大屏</h2>
+                <p class="mb-0 text-muted small">看你的学生在 AI 导师下的学习活跃度、参与度与满意度。数据每 60 秒自动刷新。</p>
+            </div>
+            <div>
+                <a href="{{ url_for('assistant_list') }}" class="btn btn-outline-secondary btn-sm">返回 AI 导师</a>
+            </div>
+        </div>
+
+        <!-- 筛选条 -->
+        <div class="om-filter-bar mb-3 d-flex flex-wrap gap-3 align-items-center">
+            <div class="d-flex align-items-center">
+                <label for="f-assistant">AI 导师</label>
+                <select id="f-assistant" class="form-select form-select-sm" style="min-width: 180px;">
+                    <option value="all">全部</option>
+                    {% for a in assistants %}
+                    <option value="{{ a.id }}">{{ a.title }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="d-flex align-items-center">
+                <label for="f-class">班级</label>
+                <select id="f-class" class="form-select form-select-sm" style="min-width: 160px;">
+                    <option value="all">全部</option>
+                    {% for c in classes %}
+                    <option value="{{ c }}">{{ c }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="d-flex align-items-center">
+                <label for="f-days">时间窗</label>
+                <select id="f-days" class="form-select form-select-sm" style="min-width: 110px;">
+                    <option value="7">近 7 天</option>
+                    <option value="30" selected>近 30 天</option>
+                    <option value="90">近 90 天</option>
+                    <option value="180">近 180 天</option>
+                </select>
+            </div>
+            <div class="ms-auto text-muted small" id="last-update">—</div>
+        </div>
+
+        <!-- 概览数字 -->
+        <div class="row g-2 mb-3">
+            <div class="col-md col-sm-6">
+                <div class="om-stat-card">
+                    <div class="om-stat-label">活跃学生</div>
+                    <div class="om-stat-value" id="s-students">--</div>
+                    <div class="om-stat-detail" id="s-classes-detail">— 个班级</div>
+                </div>
+            </div>
+            <div class="col-md col-sm-6">
+                <div class="om-stat-card">
+                    <div class="om-stat-label">消息总数</div>
+                    <div class="om-stat-value" id="s-messages">--</div>
+                    <div class="om-stat-detail" id="s-user-detail">学生发起：—</div>
+                </div>
+            </div>
+            <div class="col-md col-sm-6">
+                <div class="om-stat-card">
+                    <div class="om-stat-label">满意度</div>
+                    <div class="om-stat-value" id="s-satisfaction" style="color: var(--om-success);">--</div>
+                    <div class="om-stat-detail" id="s-satisfaction-detail">暂无评分</div>
+                </div>
+            </div>
+            <div class="col-md col-sm-6">
+                <div class="om-stat-card">
+                    <div class="om-stat-label">黑名单触发</div>
+                    <div class="om-stat-value" id="s-blocked" style="color: var(--om-danger);">--</div>
+                    <div class="om-stat-detail">命中关键词的发言数</div>
+                </div>
+            </div>
+            <div class="col-md col-sm-6">
+                <div class="om-stat-card">
+                    <div class="om-stat-label">累计 Tokens</div>
+                    <div class="om-stat-value" id="s-tokens">--</div>
+                    <div class="om-stat-detail">用于估算成本</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 图表区 -->
+        <div class="row g-2">
+            <div class="col-lg-8">
+                <div class="om-chart-card">
+                    <div class="om-chart-title">每日消息趋势</div>
+                    <div class="om-chart-sub">学生提问 vs AI 回答（按日聚合）</div>
+                    <div id="chart-daily" style="height: 300px;"></div>
+                </div>
+            </div>
+            <div class="col-lg-4">
+                <div class="om-chart-card">
+                    <div class="om-chart-title">学生满意度</div>
+                    <div class="om-chart-sub">基于学生在 AI 回复下打的 👍 / 👎</div>
+                    <div id="chart-satis" style="height: 300px;"></div>
+                </div>
+            </div>
+
+            <div class="col-lg-6">
+                <div class="om-chart-card">
+                    <div class="om-chart-title">班级活跃度</div>
+                    <div class="om-chart-sub">前 15 个班级，按消息总数排序</div>
+                    <div id="chart-class" style="height: 320px;"></div>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="om-chart-card">
+                    <div class="om-chart-title">学生参与排行 Top 10</div>
+                    <div class="om-chart-sub">仅统计学生发起的提问</div>
+                    <div id="chart-students" style="height: 320px;"></div>
+                </div>
+            </div>
+
+            <div class="col-lg-6">
+                <div class="om-chart-card">
+                    <div class="om-chart-title">AI 导师使用分布</div>
+                    <div class="om-chart-sub">不同 AI 导师下产生的消息数</div>
+                    <div id="chart-asst" style="height: 320px;"></div>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="om-chart-card">
+                    <div class="om-chart-title">活跃时段（24 小时）</div>
+                    <div class="om-chart-sub">学生最常发起对话的时段</div>
+                    <div id="chart-hour" style="height: 320px;"></div>
+                </div>
+            </div>
+
+            <div class="col-lg-12">
+                <div class="om-chart-card">
+                    <div class="om-chart-title">关键词命中 Top 10</div>
+                    <div class="om-chart-sub">命中黑名单关键词的次数（用于发现需要老师关注的学生）</div>
+                    <div id="chart-keywords" style="height: 280px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='vendor/echarts/echarts.min.js') }}"></script>
+<script>
+(function () {
+    var apiBase = '/api/analytics/data';
+    var charts = {};
+
+    function getThemePalette() {
+        var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+        var css = getComputedStyle(document.documentElement);
+        return {
+            dark: dark,
+            ink:    (css.getPropertyValue('--om-ink')    || (dark ? '#EDE8DD' : '#141413')).trim(),
+            muted:  (css.getPropertyValue('--om-muted')  || '#6B6760').trim(),
+            border: (css.getPropertyValue('--om-border') || '#E5E0D8').trim(),
+            paper:  (css.getPropertyValue('--om-paper')  || (dark ? '#2A2722' : '#FFFFFF')).trim(),
+            clay:   (css.getPropertyValue('--om-clay')   || '#D97757').trim(),
+            success:(css.getPropertyValue('--om-success')|| '#5B7553').trim(),
+            warn:   (css.getPropertyValue('--om-warn')   || '#B8860B').trim(),
+            danger: (css.getPropertyValue('--om-danger') || '#B8463E').trim(),
+        };
+    }
+
+    function baseGrid() { return {left: 50, right: 24, top: 24, bottom: 36, containLabel: true}; }
+    function emptyCheck(el, hasData) {
+        var existing = el.querySelector('.om-chart-empty');
+        if (!hasData) {
+            if (!existing) {
+                var d = document.createElement('div');
+                d.className = 'om-chart-empty';
+                d.textContent = '当前筛选下还没有数据';
+                el.appendChild(d);
+            }
+            return false;
+        }
+        if (existing) existing.remove();
+        return true;
+    }
+
+    function renderDaily(data) {
+        var el = document.getElementById('chart-daily');
+        var has = data.daily_messages.some(function (d) { return d.user || d.assistant; });
+        if (!emptyCheck(el, has)) return;
+        if (!charts.daily) charts.daily = echarts.init(el);
+        var p = getThemePalette();
+        charts.daily.setOption({
+            tooltip: {trigger: 'axis', axisPointer: {type: 'shadow'}, backgroundColor: p.paper, borderColor: p.border, textStyle: {color: p.ink}},
+            legend: {data: ['学生提问', 'AI 回答'], textStyle: {color: p.muted}, top: 0, right: 0},
+            grid: baseGrid(),
+            xAxis: {
+                type: 'category',
+                data: data.daily_messages.map(function (d) { return d.date.slice(5); }),
+                axisLabel: {color: p.muted, fontSize: 11},
+                axisLine: {lineStyle: {color: p.border}},
+            },
+            yAxis: {type: 'value', axisLabel: {color: p.muted}, splitLine: {lineStyle: {color: p.border, type: 'dashed'}}},
+            series: [
+                {name: '学生提问', type: 'bar', stack: 'total', itemStyle: {color: p.clay}, data: data.daily_messages.map(function (d) { return d.user; })},
+                {name: 'AI 回答',  type: 'bar', stack: 'total', itemStyle: {color: p.success}, data: data.daily_messages.map(function (d) { return d.assistant; })},
+            ],
+        }, true);
+    }
+
+    function renderSatisfaction(data) {
+        var el = document.getElementById('chart-satis');
+        var s = data.satisfaction;
+        var has = (s.up + s.down + s.unrated) > 0;
+        if (!emptyCheck(el, has)) return;
+        if (!charts.satis) charts.satis = echarts.init(el);
+        var p = getThemePalette();
+        charts.satis.setOption({
+            tooltip: {trigger: 'item', backgroundColor: p.paper, borderColor: p.border, textStyle: {color: p.ink}},
+            legend: {bottom: 0, textStyle: {color: p.muted}},
+            series: [{
+                type: 'pie', radius: ['52%', '76%'], avoidLabelOverlap: true,
+                label: {color: p.muted, formatter: '{b}\n{c}'},
+                labelLine: {lineStyle: {color: p.border}},
+                data: [
+                    {value: s.up,      name: '👍 有用',     itemStyle: {color: p.success}},
+                    {value: s.down,    name: '👎 没用',     itemStyle: {color: p.danger}},
+                    {value: s.unrated, name: '未评',         itemStyle: {color: p.border}},
+                ],
+            }],
+        }, true);
+    }
+
+    function renderClassActivity(data) {
+        var el = document.getElementById('chart-class');
+        var has = data.class_activity.length > 0;
+        if (!emptyCheck(el, has)) return;
+        if (!charts.cls) charts.cls = echarts.init(el);
+        var p = getThemePalette();
+        var items = data.class_activity.slice().reverse();
+        charts.cls.setOption({
+            tooltip: {trigger: 'axis', axisPointer: {type: 'shadow'}, backgroundColor: p.paper, borderColor: p.border, textStyle: {color: p.ink},
+                formatter: function (params) {
+                    var c = items[params[0].dataIndex];
+                    return c.class_name + '<br/>消息数: ' + c.messages + '<br/>学生数: ' + c.students;
+                }},
+            grid: baseGrid(),
+            xAxis: {type: 'value', axisLabel: {color: p.muted}, splitLine: {lineStyle: {color: p.border, type: 'dashed'}}},
+            yAxis: {type: 'category', data: items.map(function (c) { return c.class_name; }), axisLabel: {color: p.muted, fontSize: 11}, axisLine: {lineStyle: {color: p.border}}},
+            series: [{
+                type: 'bar',
+                data: items.map(function (c) { return c.messages; }),
+                itemStyle: {color: p.clay, borderRadius: [0, 4, 4, 0]},
+                label: {show: true, position: 'right', color: p.muted, fontSize: 11},
+            }],
+        }, true);
+    }
+
+    function renderTopStudents(data) {
+        var el = document.getElementById('chart-students');
+        var has = data.top_students.length > 0;
+        if (!emptyCheck(el, has)) return;
+        if (!charts.stu) charts.stu = echarts.init(el);
+        var p = getThemePalette();
+        var items = data.top_students.slice().reverse();
+        charts.stu.setOption({
+            tooltip: {trigger: 'axis', axisPointer: {type: 'shadow'}, backgroundColor: p.paper, borderColor: p.border, textStyle: {color: p.ink},
+                formatter: function (params) {
+                    var s = items[params[0].dataIndex];
+                    return s.name + '（' + s.class_name + '）<br/>提问数: ' + s.messages;
+                }},
+            grid: baseGrid(),
+            xAxis: {type: 'value', axisLabel: {color: p.muted}, splitLine: {lineStyle: {color: p.border, type: 'dashed'}}},
+            yAxis: {type: 'category', data: items.map(function (s) { return s.name; }), axisLabel: {color: p.muted, fontSize: 11}, axisLine: {lineStyle: {color: p.border}}},
+            series: [{
+                type: 'bar',
+                data: items.map(function (s) { return s.messages; }),
+                itemStyle: {color: p.success, borderRadius: [0, 4, 4, 0]},
+                label: {show: true, position: 'right', color: p.muted, fontSize: 11},
+            }],
+        }, true);
+    }
+
+    function renderAssistantDist(data) {
+        var el = document.getElementById('chart-asst');
+        var has = data.assistant_distribution.length > 0;
+        if (!emptyCheck(el, has)) return;
+        if (!charts.asst) charts.asst = echarts.init(el);
+        var p = getThemePalette();
+        var palette = [p.clay, p.success, '#7E6B98', '#B8860B', '#5E8AA0', '#B8463E', '#94918B'];
+        var total = data.assistant_distribution.reduce(function (s, a) { return s + a.messages; }, 0) || 1;
+        charts.asst.setOption({
+            tooltip: {
+                trigger: 'item', backgroundColor: p.paper, borderColor: p.border, textStyle: {color: p.ink},
+                formatter: function (params) {
+                    var pct = (params.value * 100 / total).toFixed(1);
+                    return params.name + '<br/>消息数：<b>' + params.value + '</b>（' + pct + '%）';
+                },
+            },
+            legend: {
+                orient: 'horizontal', bottom: 0, left: 'center', textStyle: {color: p.muted, fontSize: 11},
+                type: 'scroll', pageButtonItemGap: 4, pageIconColor: p.muted, pageTextStyle: {color: p.muted},
+            },
+            series: [{
+                type: 'pie', radius: ['46%', '72%'], center: ['50%', '46%'],
+                avoidLabelOverlap: true,
+                label: {show: false},
+                labelLine: {show: false},
+                emphasis: {label: {show: true, color: p.ink, fontWeight: 600, formatter: '{b}\n{c}'}},
+                data: data.assistant_distribution.map(function (a, i) {
+                    return {name: a.title, value: a.messages, itemStyle: {color: palette[i % palette.length]}};
+                }),
+            }],
+        }, true);
+    }
+
+    function renderHourHeatmap(data) {
+        var el = document.getElementById('chart-hour');
+        var has = data.hour_heatmap.some(function (h) { return h.count > 0; });
+        if (!emptyCheck(el, has)) return;
+        if (!charts.hour) charts.hour = echarts.init(el);
+        var p = getThemePalette();
+        charts.hour.setOption({
+            tooltip: {trigger: 'axis', axisPointer: {type: 'shadow'}, backgroundColor: p.paper, borderColor: p.border, textStyle: {color: p.ink}},
+            grid: baseGrid(),
+            xAxis: {type: 'category', data: data.hour_heatmap.map(function (h) { return h.hour + '点'; }), axisLabel: {color: p.muted, fontSize: 10}, axisLine: {lineStyle: {color: p.border}}},
+            yAxis: {type: 'value', axisLabel: {color: p.muted}, splitLine: {lineStyle: {color: p.border, type: 'dashed'}}},
+            series: [{
+                type: 'bar',
+                data: data.hour_heatmap.map(function (h) { return h.count; }),
+                itemStyle: {color: p.clay, borderRadius: [4, 4, 0, 0]},
+            }],
+        }, true);
+    }
+
+    function renderKeywords(data) {
+        var el = document.getElementById('chart-keywords');
+        var has = data.top_keywords.length > 0;
+        if (!emptyCheck(el, has)) return;
+        if (!charts.kw) charts.kw = echarts.init(el);
+        var p = getThemePalette();
+        var items = data.top_keywords.slice().reverse();
+        charts.kw.setOption({
+            tooltip: {trigger: 'axis', axisPointer: {type: 'shadow'}, backgroundColor: p.paper, borderColor: p.border, textStyle: {color: p.ink}},
+            grid: baseGrid(),
+            xAxis: {type: 'value', axisLabel: {color: p.muted}, splitLine: {lineStyle: {color: p.border, type: 'dashed'}}},
+            yAxis: {type: 'category', data: items.map(function (k) { return k.keyword; }), axisLabel: {color: p.muted, fontSize: 11}, axisLine: {lineStyle: {color: p.border}}},
+            series: [{
+                type: 'bar',
+                data: items.map(function (k) { return k.hits; }),
+                itemStyle: {color: p.danger, borderRadius: [0, 4, 4, 0]},
+                label: {show: true, position: 'right', color: p.muted, fontSize: 11},
+            }],
+        }, true);
+    }
+
+    function renderSummary(data) {
+        var s = data.summary;
+        document.getElementById('s-students').textContent = s.active_students || 0;
+        document.getElementById('s-classes-detail').textContent = (s.active_classes || 0) + ' 个班级';
+        document.getElementById('s-messages').textContent = s.total_messages || 0;
+        document.getElementById('s-user-detail').textContent = '学生发起：' + (s.total_user_messages || 0);
+        document.getElementById('s-blocked').textContent = s.blocked_hits || 0;
+        document.getElementById('s-tokens').textContent = (s.total_tokens || 0).toLocaleString();
+        var sat = document.getElementById('s-satisfaction');
+        var satDetail = document.getElementById('s-satisfaction-detail');
+        if (s.thumbs_up + s.thumbs_down === 0) {
+            sat.textContent = '—';
+            sat.style.color = 'var(--om-muted)';
+            satDetail.textContent = '暂无评分';
+        } else {
+            sat.textContent = (s.satisfaction_pct == null ? '—' : s.satisfaction_pct + '%');
+            sat.style.color = (s.satisfaction_pct >= 70) ? 'var(--om-success)'
+                : (s.satisfaction_pct >= 40 ? 'var(--om-warn)' : 'var(--om-danger)');
+            satDetail.innerHTML = '👍 ' + s.thumbs_up + ' / 👎 ' + s.thumbs_down;
+        }
+    }
+
+    function refresh() {
+        var assistantId = document.getElementById('f-assistant').value;
+        var className = document.getElementById('f-class').value;
+        var days = document.getElementById('f-days').value;
+        var url = apiBase + '?assistant_id=' + encodeURIComponent(assistantId) +
+                  '&class_name=' + encodeURIComponent(className) +
+                  '&days=' + encodeURIComponent(days);
+        fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+            if (!data || data.code !== 200) return;
+            renderSummary(data);
+            renderDaily(data);
+            renderSatisfaction(data);
+            renderClassActivity(data);
+            renderTopStudents(data);
+            renderAssistantDist(data);
+            renderHourHeatmap(data);
+            renderKeywords(data);
+            var t = new Date();
+            document.getElementById('last-update').textContent = '最近刷新：' +
+                String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0') + ':' + String(t.getSeconds()).padStart(2, '0');
+        }).catch(function (e) { console.error(e); });
+    }
+
+    // 主题切换 → 重绘所有图（清掉重新 init 才能换底色）
+    function disposeAll() {
+        Object.keys(charts).forEach(function (k) { try { charts[k].dispose(); } catch (e) {} });
+        charts = {};
+    }
+
+    document.getElementById('f-assistant').addEventListener('change', refresh);
+    document.getElementById('f-class').addEventListener('change', refresh);
+    document.getElementById('f-days').addEventListener('change', refresh);
+
+    window.addEventListener('resize', function () {
+        Object.keys(charts).forEach(function (k) { try { charts[k].resize(); } catch (e) {} });
+    });
+
+    var themeBtn = document.getElementById('om-theme-toggle');
+    if (themeBtn) {
+        themeBtn.addEventListener('click', function () {
+            // 等 base.html 的 data-theme 切换完后再重绘
+            setTimeout(function () { disposeAll(); refresh(); }, 50);
+        });
+    }
+
+    refresh();
+    setInterval(refresh, 60000);
+})();
+</script>
+{% endblock %}

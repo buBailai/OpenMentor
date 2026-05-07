@@ -1,0 +1,134 @@
+{% extends 'base.html' %}
+
+{% block title %}数据任务 - {{ get_app_name() }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2 class="mb-0" style="color: #141413; font-weight: 700;">我的数据任务</h2>
+            <a href="{{ url_for('create_task') }}" class="btn btn-primary" style="font-weight: 500;">
+                创建新任务
+            </a>
+        </div>
+        
+        {% if tasks %}
+        <div class="row g-3">
+            {% for task in tasks %}
+            <div class="col-md-4 col-sm-6">
+                <div class="card h-100">
+                    <a href="{{ url_for('task_detail', task_id=task.id) }}" class="text-decoration-none">
+                        <div class="card-header" style="padding-bottom: 0.75rem;">
+                            <h5 class="card-title mb-2" style="color: white; font-weight: 600;">{{ task.title }}</h5>
+                            <div class="d-flex gap-2 flex-wrap">
+                                {% if task.sharing_type == 'organization' %}
+                                <span class="badge" style="background-color: #C56548; font-size: 0.75rem;">
+                                    <i class="bi bi-building"></i> 组织共享
+                                </span>
+                                {% elif task.sharing_type == 'shared' %}
+                                <span class="badge" style="background-color: #5B7553; font-size: 0.75rem;">
+                                    <i class="bi bi-share-fill"></i> 已共享
+                                </span>
+                                {% elif task.sharing_type == 'public' %}
+                                <span class="badge" style="background-color: #B8860B; color: white; font-size: 0.75rem;">
+                                    <i class="bi bi-globe"></i> 公开
+                                </span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="card-body" style="padding-bottom: 0.25rem;">
+                            {% if task.description %}
+                            <p class="card-text mb-3">{{ task.description }}</p>
+                            {% else %}
+                            <p class="card-text mb-3 text-muted">暂无描述</p>
+                            {% endif %}
+                            <div class="mb-3">
+                                <small class="text-muted">创建时间: {{ task.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</small>
+                            </div>
+                            <div class="mb-3">
+                                <small class="text-muted">提交数量: {{ task.submission|length }}</small>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small text-muted">提交URL:</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control form-control-sm" readonly value="{{ request.host_url }}api/{{ task.task_id }}" id="url-{{ task.id }}">
+                                    <button class="btn btn-secondary btn-sm" onclick="copyToClipboard('url-{{ task.id }}')" style="font-weight: 500; background-color: #6B6760; color: white; border: none;">
+                                        复制
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </a>
+                    <div class="card-footer" style="background-color: #F7F4EC; border-top: 1px solid #E5E0D8; padding: 1rem;">
+                        <div class="d-flex flex-wrap align-items-center gap-2" style="min-width: 0;">
+                            <a href="{{ url_for('export_data', task_id=task.id) }}" class="btn btn-sm" style="font-weight: 500; background-color: white; color: #5B7553; border: 1px solid #5B7553; height: 36px; display: inline-flex; align-items: center; justify-content: center; white-space: nowrap; flex-shrink: 0;">
+                                导出
+                            </a>
+                            <a href="{{ url_for('smart_analyze', task_id=task.id) }}" class="btn btn-sm" style="font-weight: 500; background-color: white; color: #141413; border: 1px solid #141413; height: 36px; display: inline-flex; align-items: center; justify-content: center; white-space: nowrap; flex-shrink: 0;">
+                                分析
+                            </a>
+                            <button type="button" class="btn btn-sm" data-bs-toggle="modal" data-bs-target="#deleteModal-{{ task.id }}" style="font-weight: 500; background-color: white; color: #B8463E; border: 1px solid #B8463E; height: 36px; display: inline-flex; align-items: center; justify-content: center; white-space: nowrap; flex-shrink: 0;">
+                                删除
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 删除确认模态框 -->
+                <div class="modal fade" id="deleteModal-{{ task.id }}" tabindex="-1" aria-labelledby="deleteModalLabel-{{ task.id }}" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="deleteModalLabel-{{ task.id }}">确认删除</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                确定要删除任务 "{{ task.title }}" 吗？此操作无法撤销，相关的所有提交数据也将被删除。
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                                <form action="{{ url_for('delete_task', task_id=task.id) }}" method="POST">
+                                    <button type="submit" class="btn btn-danger">确认删除</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="card">
+            <div class="card-body text-center py-5">
+                <div class="mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="#6c757d" class="bi bi-inbox" viewBox="0 0 16 16">
+                        <path d="M4.98 4a.5.5 0 0 0-.39.188L1.54 8H6a.5.5 0 0 1 .5.5 1.5 1.5 0 1 0 3 0A.5.5 0 0 1 10 8h4.46l-3.05-3.812A.5.5 0 0 0 11.02 4H4.98zm-1.17-.437A1.5 1.5 0 0 1 4.98 3h6.04a1.5 1.5 0 0 1 1.17.563l3.7 4.625a.5.5 0 0 1 .106.374l-.39 3.124A1.5 1.5 0 0 1 14.117 13H1.883a1.5 1.5 0 0 1-1.489-1.314l-.39-3.124a.5.5 0 0 1 .106-.374L3.8 3.563zM3.8 6.5a.5.5 0 0 0-.5.5v6a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5v-6a.5.5 0 0 0-.5-.5H3.8z"/>
+                    </svg>
+                </div>
+                <h4>还没有创建任何数据任务</h4>
+                <p class="text-muted mb-4">点击下方按钮创建您的第一个数据任务</p>
+                <a href="{{ url_for('import_task') }}" class="btn btn-primary">导入任务</a>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+    
+{% block scripts %}
+<script>
+    function copyToClipboard(elementId) {
+        const element = document.getElementById(elementId);
+        element.select();
+        element.setSelectionRange(0, 99999);
+        document.execCommand('copy');
+        
+        const btn = element.nextElementSibling;
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '已复制！';
+        setTimeout(() => {
+            btn.innerHTML = originalText;
+        }, 2000);
+    }
+</script>
+{% endblock %}
+{% endblock %}

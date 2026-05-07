@@ -1,0 +1,161 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import assistant_avatar %}
+
+{% block title %}AI 导师 - {{ get_app_name() }}{% endblock %}
+
+{% block styles %}
+{{ super() }}
+<style>
+    /* AI 导师列表卡片底部 4 等宽操作按钮 */
+    .om-action-row {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.4rem;
+    }
+    .om-action-form { margin: 0; min-width: 0; }
+    .om-action {
+        width: 100%;
+        min-height: 32px;
+        padding: 0.35rem 0.4rem;
+        font-size: 0.85rem;
+        white-space: nowrap;
+        letter-spacing: 0.02em;
+    }
+    .om-action i.bi { margin-right: 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h2 class="mb-1" style="color: #141413; font-weight: 700;">AI 导师</h2>
+                <p class="mb-0 text-muted small">配置专属 AI 助教，生成学生链接，扫码即用。</p>
+            </div>
+            <div class="d-flex gap-2">
+                <a href="{{ url_for('assistant_import') }}" class="btn btn-outline-primary" style="font-weight: 500;">
+                    <i class="bi bi-cloud-upload"></i> 导入模板
+                </a>
+                <a href="{{ url_for('assistant_create') }}" class="btn btn-primary" style="font-weight: 500;">
+                    <i class="bi bi-plus-circle"></i> 创建 AI 导师
+                </a>
+            </div>
+        </div>
+
+        {% if items %}
+        <div class="row g-3">
+            {% for item in items %}
+            {% set a = item.task %}
+            <div class="col-md-6 col-lg-4">
+                <div class="card h-100" style="border: 1px solid #E5E0D8; border-radius: 10px; overflow: hidden;">
+                    <div class="card-header">
+                        <div class="d-flex align-items-center gap-2">
+                            {{ assistant_avatar(a, size='md') }}
+                            <h5 class="mb-0 flex-fill" style="font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                {{ a.title }}
+                            </h5>
+                            {% if item.effective_status == 'expired' %}
+                                <span class="badge" style="background-color: #6B6760;">已过期</span>
+                            {% elif item.effective_status == 'disabled' %}
+                                <span class="badge" style="background-color: #B8463E;">已禁用</span>
+                            {% else %}
+                                <span class="badge" style="background-color: #5B7553;">启用中</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        {% if a.description %}
+                        <p class="card-text text-muted small mb-3" style="min-height: 2.5em;">{{ a.description }}</p>
+                        {% else %}
+                        <p class="card-text text-muted small fst-italic mb-3" style="min-height: 2.5em;">暂无描述</p>
+                        {% endif %}
+
+                        <div class="row g-2 mb-3" style="font-size: 0.85rem;">
+                            <div class="col-6">
+                                <div class="text-muted">使用模型</div>
+                                <div style="font-weight: 600;">{{ a.selected_model_name or '默认' }}</div>
+                            </div>
+                            <div class="col-6">
+                                <div class="text-muted">每日上限</div>
+                                <div style="font-weight: 600;">{{ a.max_messages_per_student_daily or 50 }} 条</div>
+                            </div>
+                            <div class="col-6">
+                                <div class="text-muted">学生数</div>
+                                <div style="font-weight: 600;">{{ item.conv_count }}</div>
+                            </div>
+                            <div class="col-6">
+                                <div class="text-muted">消息总数</div>
+                                <div style="font-weight: 600;">{{ item.msg_count }}</div>
+                            </div>
+                        </div>
+
+                        <div class="mb-2">
+                            <small class="text-muted">
+                                链接有效期：
+                                {% if a.link_expires_at %}
+                                    {{ a.link_expires_at.strftime('%Y-%m-%d %H:%M') }}
+                                {% else %}
+                                    未设置
+                                {% endif %}
+                            </small>
+                        </div>
+                        <div class="mb-3">
+                            <small class="text-muted">创建时间：{{ a.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                        </div>
+
+                        <div class="om-action-row">
+                            <a href="{{ url_for('assistant_detail', assistant_id=a.id) }}"
+                               class="btn btn-sm btn-primary om-action">查看</a>
+                            <a href="{{ url_for('assistant_edit', assistant_id=a.id) }}"
+                               class="btn btn-sm btn-outline-secondary om-action">编辑</a>
+                            <button class="btn btn-sm btn-outline-{{ 'danger' if a.status == 'active' else 'success' }} om-action"
+                                    onclick="toggleAssistant({{ a.id }}, this)">
+                                {{ '禁用' if a.status == 'active' else '启用' }}
+                            </button>
+                            <form method="POST" action="{{ url_for('assistant_delete', assistant_id=a.id) }}"
+                                  class="om-action-form"
+                                  onsubmit="return confirm('确定删除「{{ a.title }}」？\n\n所有学生对话记录会被一并删除，此操作不可恢复。');">
+                                <button type="submit" class="btn btn-sm btn-outline-danger om-action">删除</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="card" style="border: 2px dashed #C9C3B8; border-radius: 10px;">
+            <div class="card-body text-center" style="padding: 3rem 1.5rem;">
+                <i class="bi bi-robot" style="font-size: 3rem; color: #94918B;"></i>
+                <h5 class="mt-3" style="color: #141413; font-weight: 600;">还没有 AI 导师</h5>
+                <p class="text-muted">创建第一个 AI 导师，为学生提供个性化学习辅助。</p>
+                <a href="{{ url_for('assistant_create') }}" class="btn btn-primary mt-2" style="font-weight: 500;">
+                    <i class="bi bi-plus-circle"></i> 立即创建
+                </a>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+function toggleAssistant(id, btn) {
+    btn.disabled = true;
+    fetch(`/assistant/${id}/toggle`, {method: 'POST'})
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert(data.message || '操作失败');
+                btn.disabled = false;
+            }
+        })
+        .catch(err => {
+            alert('网络错误');
+            btn.disabled = false;
+        });
+}
+</script>
+{% endblock %}
