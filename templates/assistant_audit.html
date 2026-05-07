@@ -23,6 +23,12 @@
                 <a href="{{ url_for('assistant_audit_export', assistant_id=assistant.id) }}" class="btn btn-success btn-sm">
                     <i class="bi bi-download"></i> 导出全部对话 Excel
                 </a>
+                <button class="btn btn-primary btn-sm" id="btn-class-report">
+                    <i class="bi bi-magic"></i> 生成 AI 学情报告
+                </button>
+                <button class="btn btn-outline-primary btn-sm" id="btn-report-history">
+                    <i class="bi bi-archive"></i> 报告历史
+                </button>
                 <button class="btn btn-outline-primary btn-sm" id="btn-refresh">
                     <i class="bi bi-arrow-clockwise"></i> 立即刷新
                 </button>
@@ -76,7 +82,28 @@
         <!-- 学生会话列表 -->
         <div class="card">
             <div class="card-header" style="background-color: #F7F4EC; border-bottom: 1px solid #E5E0D8; font-weight: 600;">
-                <i class="bi bi-people"></i> 学生会话 <span id="last-update" class="text-muted small fw-normal ms-2"></span>
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <span><i class="bi bi-people"></i> 学生会话 <span id="last-update" class="text-muted small fw-normal ms-2"></span></span>
+                    <span id="filter-count" class="text-muted small fw-normal" style="display:none;"></span>
+                </div>
+                <!-- B10: 筛选条（一行：搜索 + 班级 + 状态 + 清除） -->
+                <div class="d-flex gap-2 align-items-center flex-nowrap mt-2" style="font-weight: 400;">
+                    <div class="position-relative" style="flex: 1 1 0; min-width: 0;">
+                        <i class="bi bi-search position-absolute" style="left: 0.7rem; top: 50%; transform: translateY(-50%); color: var(--om-subtle); pointer-events: none;"></i>
+                        <input id="filter-q" type="search" class="form-control form-control-sm"
+                               style="padding-left: 2rem;" placeholder="搜索姓名、班级或最后内容..." autocomplete="off">
+                    </div>
+                    <select id="filter-class" class="form-select form-select-sm" style="flex: 0 0 auto; width: 130px;">
+                        <option value="">全部班级</option>
+                    </select>
+                    <select id="filter-status" class="form-select form-select-sm" style="flex: 0 0 auto; width: 120px;">
+                        <option value="">全部状态</option>
+                        <option value="active">活跃</option>
+                        <option value="blocked">已封禁</option>
+                        <option value="multi">多设备</option>
+                    </select>
+                    <button id="filter-clear" type="button" class="btn btn-link btn-sm text-muted p-0 ms-1" style="display:none; flex: 0 0 auto; white-space: nowrap;">清除</button>
+                </div>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
@@ -108,9 +135,107 @@
     const apiUrl = `/api/assistant/${ASSISTANT_ID}/audit/conversations`;
     const tbody = document.getElementById('conv-tbody');
     const lastUpdate = document.getElementById('last-update');
+    let allStudents = [];   // B10: 缓存当前最新一拉的学生列表，用于本地筛选
 
     function escapeHtml(s) {
         return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    function getFilters() {
+        return {
+            q: (document.getElementById('filter-q').value || '').trim().toLowerCase(),
+            cls: document.getElementById('filter-class').value || '',
+            status: document.getElementById('filter-status').value || '',
+        };
+    }
+
+    function applyFilters(students, f) {
+        return students.filter(s => {
+            if (f.cls && s.student_class !== f.cls) return false;
+            if (f.status === 'active' && s.is_blocked_any) return false;
+            if (f.status === 'blocked' && !s.is_blocked_any) return false;
+            if (f.status === 'multi' && (s.session_count || 1) < 2) return false;
+            if (f.q) {
+                const hay = [s.student_name, s.student_class, s.last_content || ''].join(' ').toLowerCase();
+                if (!hay.includes(f.q)) return false;
+            }
+            return true;
+        });
+    }
+
+    function syncClassDropdown(students) {
+        // 把当前数据里出现的班级填进下拉
+        const sel = document.getElementById('filter-class');
+        const prev = sel.value;
+        const classes = Array.from(new Set(students.map(s => s.student_class).filter(Boolean))).sort();
+        sel.innerHTML = '<option value="">全部班级</option>' +
+            classes.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+        if (classes.includes(prev)) sel.value = prev;  // 保持选中
+    }
+
+    function renderTable() {
+        const f = getFilters();
+        const filtered = applyFilters(allStudents, f);
+
+        // 计数 + 清除按钮
+        const cntEl = document.getElementById('filter-count');
+        const clrBtn = document.getElementById('filter-clear');
+        const isFiltered = !!(f.q || f.cls || f.status);
+        if (isFiltered) {
+            cntEl.textContent = `筛选：${filtered.length} / ${allStudents.length} 学生`;
+            cntEl.style.display = '';
+            clrBtn.style.display = '';
+        } else {
+            cntEl.style.display = 'none';
+            clrBtn.style.display = 'none';
+        }
+
+        if (allStudents.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">还没有学生进入对话。让学生扫码试试吧 →</td></tr>`;
+            return;
+        }
+        if (filtered.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">没有匹配筛选条件的学生</td></tr>`;
+            return;
+        }
+        tbody.innerHTML = filtered.map(renderRow).join('');
+    }
+
+    function renderRow(s) {
+        const blockedBadge = s.blocked_hits > 0 ? `<span class="badge bg-warning text-dark ms-1" title="该学生有 ${s.blocked_hits} 条触发黑名单"><i class="bi bi-exclamation-triangle"></i> ${s.blocked_hits}</span>` : '';
+        const stuBlocked = s.is_blocked_any ? '<span class="badge bg-danger ms-1">已封禁</span>' : '';
+        const deviceBadge = s.session_count > 1
+            ? `<span class="badge ms-1" style="background:var(--om-clay-soft); color:var(--om-clay-deep); font-weight:500;" title="该学生在 ${s.session_count} 台设备上有独立会话"><i class="bi bi-phone"></i> ${s.session_count} 台</span>`
+            : '';
+        const roleIcon = s.last_role === 'user'
+            ? '<i class="bi bi-person"></i>'
+            : (s.last_role === 'assistant' ? '<i class="bi bi-robot"></i>' : '<i class="bi bi-info-circle"></i>');
+        const lastBubble = s.last_content
+            ? `<div style="font-size:0.825rem; color:#6B6760; max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(s.last_content)}">${roleIcon} ${escapeHtml(s.last_content)}</div>`
+            : '<span class="text-muted small">—</span>';
+        const detailHref = `/assistant/${ASSISTANT_ID}/audit/${s.primary_session_id}`;
+        const blockOnclick = s.session_count > 1
+            ? `toggleBlockStudentByName(${JSON.stringify(s.student_class)}, ${JSON.stringify(s.student_name)}, ${s.is_blocked_any ? 'true' : 'false'}, this)`
+            : `toggleBlockStudent(${s.primary_session_id}, this)`;
+        return `
+        <tr>
+            <td>
+                <div style="font-weight:600; color:var(--om-ink);">${escapeHtml(s.student_name)}${deviceBadge}</div>
+                <div style="font-size:0.75rem; color:var(--om-muted);">${escapeHtml(s.student_class)}</div>
+            </td>
+            <td><span style="font-weight:600;">${s.user_msg_count}</span> ${blockedBadge}</td>
+            <td><span class="${s.daily_message_count >= s.daily_limit ? 'text-danger' : (s.daily_message_count >= s.daily_limit - 5 ? 'text-warning' : 'text-muted')}">${s.daily_message_count} / ${s.daily_limit}</span></td>
+            <td><small class="text-muted">${escapeHtml(s.last_active_at || '—')}</small></td>
+            <td>${lastBubble}</td>
+            <td>${stuBlocked || '<span class="badge bg-success">活跃</span>'}</td>
+            <td style="text-align:right;">
+                <a href="${detailHref}" class="btn btn-sm btn-outline-primary">查看对话</a>
+                <button class="btn btn-sm btn-outline-${s.is_blocked_any ? 'success' : 'danger'} ms-1"
+                        onclick='${blockOnclick}' title="${s.is_blocked_any ? '解禁该学生' : '封禁该学生'}">
+                    ${s.is_blocked_any ? '解禁' : '封禁'}
+                </button>
+            </td>
+        </tr>`;
     }
 
     async function refresh() {
@@ -157,50 +282,10 @@
                 ? '<span class="badge bg-success">启用中</span>'
                 : (status === 'disabled' ? '<span class="badge bg-danger">已禁用</span>' : '<span class="badge bg-secondary">未知</span>');
 
-            // 更新表格（B8：按学生身份聚合，多设备折叠成一行 + 设备徽章）
-            const students = data.students || [];
-            if (students.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">还没有学生进入对话。让学生扫码试试吧 →</td></tr>`;
-            } else {
-                tbody.innerHTML = students.map(s => {
-                    const blockedBadge = s.blocked_hits > 0 ? `<span class="badge bg-warning text-dark ms-1" title="该学生有 ${s.blocked_hits} 条触发黑名单"><i class="bi bi-exclamation-triangle"></i> ${s.blocked_hits}</span>` : '';
-                    const stuBlocked = s.is_blocked_any ? '<span class="badge bg-danger ms-1">已封禁</span>' : '';
-                    const deviceBadge = s.session_count > 1
-                        ? `<span class="badge ms-1" style="background:var(--om-clay-soft); color:var(--om-clay-deep); font-weight:500;" title="该学生在 ${s.session_count} 台设备上有独立会话"><i class="bi bi-phone"></i> ${s.session_count} 台</span>`
-                        : '';
-                    const roleIcon = s.last_role === 'user'
-                        ? '<i class="bi bi-person"></i>'
-                        : (s.last_role === 'assistant' ? '<i class="bi bi-robot"></i>' : '<i class="bi bi-info-circle"></i>');
-                    const lastBubble = s.last_content
-                        ? `<div style="font-size:0.825rem; color:#6B6760; max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(s.last_content)}">${roleIcon} ${escapeHtml(s.last_content)}</div>`
-                        : '<span class="text-muted small">—</span>';
-                    // 单/多设备都走最近一次会话；多设备时详情页头部会显示设备切换条
-                    const detailHref = `/assistant/${ASSISTANT_ID}/audit/${s.primary_session_id}`;
-                    // 多设备封禁/解禁：调用聚合接口；单设备：维持原 conv 接口
-                    const blockOnclick = s.session_count > 1
-                        ? `toggleBlockStudentByName(${JSON.stringify(s.student_class)}, ${JSON.stringify(s.student_name)}, ${s.is_blocked_any ? 'true' : 'false'}, this)`
-                        : `toggleBlockStudent(${s.primary_session_id}, this)`;
-                    return `
-                    <tr>
-                        <td>
-                            <div style="font-weight:600; color:var(--om-ink);">${escapeHtml(s.student_name)}${deviceBadge}</div>
-                            <div style="font-size:0.75rem; color:var(--om-muted);">${escapeHtml(s.student_class)}</div>
-                        </td>
-                        <td><span style="font-weight:600;">${s.user_msg_count}</span> ${blockedBadge}</td>
-                        <td><span class="${s.daily_message_count >= s.daily_limit ? 'text-danger' : (s.daily_message_count >= s.daily_limit - 5 ? 'text-warning' : 'text-muted')}">${s.daily_message_count} / ${s.daily_limit}</span></td>
-                        <td><small class="text-muted">${escapeHtml(s.last_active_at || '—')}</small></td>
-                        <td>${lastBubble}</td>
-                        <td>${stuBlocked || '<span class="badge bg-success">活跃</span>'}</td>
-                        <td style="text-align:right;">
-                            <a href="${detailHref}" class="btn btn-sm btn-outline-primary">查看对话</a>
-                            <button class="btn btn-sm btn-outline-${s.is_blocked_any ? 'success' : 'danger'} ms-1"
-                                    onclick='${blockOnclick}' title="${s.is_blocked_any ? '解禁该学生' : '封禁该学生'}">
-                                ${s.is_blocked_any ? '解禁' : '封禁'}
-                            </button>
-                        </td>
-                    </tr>`;
-                }).join('');
-            }
+            // B10: 缓存最新数据 → 同步班级下拉 → 重渲染（应用当前筛选）
+            allStudents = data.students || [];
+            syncClassDropdown(allStudents);
+            renderTable();
             const now = new Date();
             lastUpdate.textContent = `· 更新于 ${now.toLocaleTimeString('zh-CN')}`;
         } catch (e) {
@@ -239,8 +324,201 @@
     };
 
     document.getElementById('btn-refresh').addEventListener('click', refresh);
+
+    // B10 筛选：input/select 都触发本地重渲染（不重新调 API）
+    let qDebounce = null;
+    document.getElementById('filter-q').addEventListener('input', () => {
+        clearTimeout(qDebounce);
+        qDebounce = setTimeout(renderTable, 120);
+    });
+    document.getElementById('filter-class').addEventListener('change', renderTable);
+    document.getElementById('filter-status').addEventListener('change', renderTable);
+    document.getElementById('filter-clear').addEventListener('click', () => {
+        document.getElementById('filter-q').value = '';
+        document.getElementById('filter-class').value = '';
+        document.getElementById('filter-status').value = '';
+        renderTable();
+    });
+
+    // B13: 生成全班 AI 学情报告（按当前班级筛选范围）
+    document.getElementById('btn-class-report').addEventListener('click', function () {
+        var btn = this;
+        var origLabel = btn.innerHTML;
+        var classFilter = document.getElementById('filter-class').value || '';
+        var scopeLabel = classFilter ? `班级「${classFilter}」` : '全部学生';
+        // 用 allStudents 估算样本量并提示
+        var inScope = applyFilters(allStudents, {q: '', cls: classFilter, status: ''});
+        var stuCount = inScope.length;
+        var msgCount = inScope.reduce((s, x) => s + (x.msg_count || 0), 0);
+        if (stuCount === 0) { alert('当前范围没有可分析的学生'); return; }
+        if (!confirm(`将基于 ${scopeLabel} 共 ${stuCount} 名学生 / ${msgCount} 条消息生成报告。\n\n这会调用一次 AI（消耗 token）。是否继续？`)) return;
+
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>AI 生成中...';
+        var fd = new FormData();
+        if (classFilter) fd.append('class_name', classFilter);
+        fetch(`/assistant/${ASSISTANT_ID}/audit/class_report`, {method: 'POST', body: fd})
+            .then(r => r.json())
+            .then(function (d) {
+                btn.disabled = false;
+                btn.innerHTML = origLabel;
+                if (!d.success) { alert(d.message || '生成失败'); return; }
+                showReportModal({
+                    title: `${d.assistant_title} · ${d.class_filter || '全部学生'} · 学情报告`,
+                    subtitle: `${d.student_count} 名学生 · ${d.message_count} 条消息${d.omitted_students ? ' · 已截断 ' + d.omitted_students + ' 名学生' : ''} · 由 ${d.model_used} 生成`,
+                    markdown: d.report,
+                    filename: `${d.assistant_title}_${d.class_filter || '全部'}_学情报告_${new Date().toISOString().slice(0,10)}.md`,
+                });
+            })
+            .catch(e => { btn.disabled = false; btn.innerHTML = origLabel; alert('网络异常：' + e); });
+    });
+
+    // B14: 报告历史列表弹窗
+    document.getElementById('btn-report-history').addEventListener('click', function () {
+        showReportHistoryModal();
+    });
+
+    function showReportHistoryModal(filterParams) {
+        var existing = document.getElementById('om-report-history-modal');
+        if (existing) existing.remove();
+        var wrap = document.createElement('div');
+        wrap.id = 'om-report-history-modal';
+        wrap.style.cssText = 'position:fixed;inset:0;background:rgba(20,17,12,0.55);z-index:1000;display:flex;align-items:center;justify-content:center;padding:1rem;';
+        wrap.innerHTML = `
+            <div style="background:var(--om-paper);border-radius:14px;max-width:720px;width:100%;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--om-border);">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:1rem 1.25rem;border-bottom:1px solid var(--om-border);">
+                    <div>
+                        <h4 style="margin:0;color:var(--om-ink);font-weight:600;font-size:1.05rem;"><i class="bi bi-archive"></i> AI 学情报告历史</h4>
+                        <p style="margin:0.25rem 0 0;color:var(--om-muted);font-size:0.82rem;" id="om-rh-subtitle">加载中...</p>
+                    </div>
+                    <button type="button" id="om-rh-close" style="background:transparent;border:none;font-size:1.4rem;color:var(--om-muted);cursor:pointer;padding:0 0.4rem;line-height:1;">×</button>
+                </div>
+                <div id="om-rh-list" style="padding:0.5rem 0;overflow-y:auto;flex:1;"></div>
+            </div>`;
+        document.body.appendChild(wrap);
+        document.getElementById('om-rh-close').onclick = () => wrap.remove();
+        wrap.addEventListener('click', e => { if (e.target === wrap) wrap.remove(); });
+        loadReportHistory(filterParams);
+    }
+
+    function loadReportHistory(filterParams) {
+        var qs = '';
+        if (filterParams) {
+            var parts = [];
+            for (var k in filterParams) {
+                if (filterParams[k]) parts.push(encodeURIComponent(k) + '=' + encodeURIComponent(filterParams[k]));
+            }
+            if (parts.length) qs = '?' + parts.join('&');
+        }
+        fetch(`/assistant/${ASSISTANT_ID}/audit/reports${qs}`)
+            .then(r => r.json())
+            .then(function (d) {
+                var listEl = document.getElementById('om-rh-list');
+                var subEl = document.getElementById('om-rh-subtitle');
+                if (!listEl) return;
+                var items = d.reports || [];
+                subEl.textContent = items.length === 0
+                    ? '尚未生成过任何报告'
+                    : `共 ${items.length} 条历史报告（最多展示最近 200 条）`;
+                if (items.length === 0) {
+                    listEl.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--om-muted);">点击上方「生成 AI 学情报告」即可创建第一份报告</div>';
+                    return;
+                }
+                listEl.innerHTML = items.map(function (r) {
+                    var typeBadge = r.report_type === 'class'
+                        ? '<span class="badge" style="background:var(--om-clay-soft);color:var(--om-clay-deep);font-weight:500;font-size:0.72rem;">班级</span>'
+                        : '<span class="badge" style="background:var(--om-success-soft);color:var(--om-success);font-weight:500;font-size:0.72rem;">学生</span>';
+                    return `
+                    <div style="padding:0.7rem 1.25rem;border-bottom:1px solid var(--om-border);display:flex;justify-content:space-between;gap:0.75rem;align-items:center;">
+                        <div style="min-width:0;flex:1;">
+                            <div style="display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap;">
+                                ${typeBadge}
+                                <strong style="color:var(--om-ink);">${escapeHtml(r.scope_label || '—')}</strong>
+                            </div>
+                            <div style="color:var(--om-muted);font-size:0.78rem;margin-top:0.2rem;">
+                                ${escapeHtml(r.created_at || '')} · ${r.student_count || 0} 人 / ${r.message_count || 0} 条消息 · ${escapeHtml(r.model_used || '')}
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:0.4rem;flex-shrink:0;">
+                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="viewHistoryReport(${r.id})">查看</button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteHistoryReport(${r.id}, this)">删除</button>
+                        </div>
+                    </div>`;
+                }).join('');
+            })
+            .catch(e => alert('加载失败：' + e));
+    }
+
+    window.viewHistoryReport = function (id) {
+        fetch(`/assistant/${ASSISTANT_ID}/audit/reports/${id}`)
+            .then(r => r.json())
+            .then(function (d) {
+                if (!d.success) { alert(d.message || '加载失败'); return; }
+                var safeName = (d.scope_label || 'report').replace(/[\\/:*?"<>|]/g, '_');
+                showReportModal({
+                    title: `${d.assistant_title} · ${d.scope_label} · 学情报告`,
+                    subtitle: `${d.created_at || ''} · ${d.student_count || 0} 人 / ${d.message_count || 0} 条消息 · 由 ${d.model_used || ''} 生成`,
+                    markdown: d.content,
+                    filename: `${safeName}_学情报告_${(d.created_at || '').slice(0,10)}.md`,
+                });
+            });
+    };
+
+    window.deleteHistoryReport = function (id, btn) {
+        if (!confirm('确定删除这份历史报告？')) return;
+        btn.disabled = true;
+        fetch(`/assistant/${ASSISTANT_ID}/audit/reports/${id}/delete`, {method: 'POST'})
+            .then(r => r.json())
+            .then(function (d) {
+                if (d.success) loadReportHistory();   // 刷新列表
+                else { alert(d.message || '删除失败'); btn.disabled = false; }
+            })
+            .catch(e => { alert('网络异常：' + e); btn.disabled = false; });
+    };
+
+    function showReportModal(opts) {
+        var existing = document.getElementById('om-report-modal');
+        if (existing) existing.remove();
+        var wrap = document.createElement('div');
+        wrap.id = 'om-report-modal';
+        wrap.style.cssText = 'position:fixed;inset:0;background:rgba(20,17,12,0.55);z-index:1000;display:flex;align-items:center;justify-content:center;padding:1rem;';
+        wrap.innerHTML = `
+            <div style="background:var(--om-paper);border-radius:14px;max-width:780px;width:100%;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--om-border);">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:1rem 1.25rem;border-bottom:1px solid var(--om-border);gap:1rem;">
+                    <div style="min-width:0;flex:1;">
+                        <h4 style="margin:0;color:var(--om-ink);font-weight:600;font-size:1.05rem;">${opts.title}</h4>
+                        <p style="margin:0.25rem 0 0;color:var(--om-muted);font-size:0.82rem;">${opts.subtitle}</p>
+                    </div>
+                    <button type="button" id="om-report-close" style="background:transparent;border:none;font-size:1.4rem;color:var(--om-muted);cursor:pointer;padding:0 0.4rem;line-height:1;">×</button>
+                </div>
+                <div id="om-report-body" style="padding:1rem 1.25rem;overflow-y:auto;flex:1;line-height:1.7;color:var(--om-ink);"></div>
+                <div style="padding:0.75rem 1.25rem;border-top:1px solid var(--om-border);display:flex;gap:0.5rem;justify-content:flex-end;">
+                    <button type="button" id="om-report-copy" class="btn btn-secondary btn-sm">复制 Markdown</button>
+                    <button type="button" id="om-report-download" class="btn btn-primary btn-sm">下载 .md</button>
+                </div>
+            </div>`;
+        document.body.appendChild(wrap);
+        var bodyEl = document.getElementById('om-report-body');
+        bodyEl.innerHTML = (window.marked && window.marked.parse) ? window.marked.parse(opts.markdown) : ('<pre style="white-space:pre-wrap;">' + escapeHtml(opts.markdown) + '</pre>');
+        document.getElementById('om-report-close').onclick = () => wrap.remove();
+        wrap.addEventListener('click', e => { if (e.target === wrap) wrap.remove(); });
+        document.getElementById('om-report-copy').onclick = function () {
+            try { navigator.clipboard.writeText(opts.markdown); this.textContent = '已复制 ✓'; setTimeout(() => this.textContent = '复制 Markdown', 1500); }
+            catch (err) { alert('请手动选中复制'); }
+        };
+        document.getElementById('om-report-download').onclick = function () {
+            var blob = new Blob([opts.markdown], {type: 'text/markdown;charset=utf-8'});
+            var a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = opts.filename;
+            document.body.appendChild(a); a.click();
+            setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(a.href); }, 100);
+        };
+    }
+
     refresh();
     setInterval(refresh, 8000);
 })();
 </script>
+<script src="{{ url_for('static', filename='vendor/marked/marked.min.js') }}"></script>
 {% endblock %}

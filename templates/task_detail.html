@@ -142,7 +142,7 @@
             <div class="card-header">
                 <div class="d-flex justify-content-between align-items-center">
                     <h5 class="mb-0" style="font-weight: 600;">提交数据列表</h5>
-                    <a href="{{ url_for('task_data_view', task_id=task.id) }}" style="color: white; text-decoration: none;"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-eye" viewBox="0 0 16 16" style="vertical-align: middle; margin-right: 4px;"><path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8zM1.173 8a13.133 13.133 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.133 13.133 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5c-2.12 0-3.879-1.168-5.168-2.457A13.134 13.134 0 0 1 1.172 8z"/><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0z"/></svg>查看实时数据</a>
+                    <a href="{{ url_for('task_data_view', task_id=task.id) }}" class="btn btn-sm" style="background-color: #141413; color: #F7F4EC; border-radius: 8px; padding: 0.45rem 0.95rem; font-weight: 500; text-decoration: none; display: inline-flex; align-items: center; gap: 0.35rem;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-eye" viewBox="0 0 16 16"><path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8zM1.173 8a13.133 13.133 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.133 13.133 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5c-2.12 0-3.879-1.168-5.168-2.457A13.134 13.134 0 0 1 1.172 8z"/><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0z"/></svg>查看实时数据</a>
                 </div>
             </div>
             <div class="card-body" style="padding: 2rem;">
@@ -169,9 +169,21 @@
                                 <td>{{ sub.id }}</td>
                                 <td>{{ sub.submitted_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
                                 <td>
-                                    <button type="button" class="btn" style="font-weight: 500; border-radius: 8px; padding: 0.5rem 1rem; transition: all 0.3s ease;" onclick="showModal('dataModal-{{ sub.id }}');">
-                                        查看数据
-                                    </button>
+                                    <div style="display:flex; gap:0.4rem; flex-wrap:wrap; align-items:center; justify-content:flex-start;">
+                                        <button type="button" class="btn" style="font-weight: 500; border-radius: 8px; padding: 0.5rem 1rem; transition: all 0.3s ease;" onclick="showModal('dataModal-{{ sub.id }}');">
+                                            查看数据
+                                        </button>
+                                        {% if sub.attachments %}
+                                        <button type="button" class="btn"
+                                                style="background-color:#5B7553;color:white;font-weight:500;border-radius:8px;padding:0.5rem 0.85rem;transition:all 0.3s ease;display:inline-flex;align-items:center;gap:0.3rem;"
+                                                onclick='openAttachmentsModal({{ sub.attachments | tojson }}, {{ sub.id }})'>
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style="vertical-align: -2px;">
+                                                <path d="M4.5 3a2.5 2.5 0 0 1 5 0v9a1.5 1.5 0 0 1-3 0V5a.5.5 0 0 1 1 0v7a.5.5 0 0 0 1 0V3a1.5 1.5 0 1 0-3 0v9a2.5 2.5 0 0 0 5 0V5a.5.5 0 0 1 1 0v7a3.5 3.5 0 1 1-7 0V3z"/>
+                                            </svg>
+                                            查看附件 ({{ sub.attachments|length }})
+                                        </button>
+                                        {% endif %}
+                                    </div>
                                 </td>
                                 <td>
                                     <form action="{{ url_for('delete_submission', submission_id=sub.id) }}" method="POST" style="display:inline;" onsubmit="return confirmDelete();">
@@ -196,7 +208,12 @@
                                     <div style="padding: 20px; flex-grow: 1; overflow-y: auto;">
                                         <p style="margin: 0 0 12px 0; font-size: 14px; color: #6B6760;"><strong>提交时间：</strong>{{ sub.submitted_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
                                         <h6 style="margin: 0 0 10px 0; font-size: 14px; font-weight: 600; color: #141413;">数据内容：</h6>
-                                        <pre style="font-size: 16px; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; margin: 0; min-height: 300px; background-color: #F7F4EC; border: 1px solid #E5E0D8; padding: 12px; border-radius: 6px; font-family: 'Courier New', monospace;">{{ sub.data }}</pre>
+                                        <pre style="font-size: 16px; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; margin: 0; min-height: 300px; background-color: #F7F4EC; border: 1px solid #E5E0D8; padding: 12px; border-radius: 6px; font-family: 'Courier New', monospace;">{{ sub.display_data or sub.data }}</pre>
+                                        {% if sub.attachments %}
+                                        <div style="margin-top:0.75rem;font-size:0.85rem;color:#6B6760;">
+                                            <i class="bi bi-paperclip"></i> 此条提交含 {{ sub.attachments|length }} 个附件，点列表中「查看附件」按钮预览。
+                                        </div>
+                                        {% endif %}
                                     </div>
                                     <div style="padding: 15px 20px; border-top: 1px solid #E5E0D8; background-color: #F7F4EC; border-radius: 0 0 10px 10px; text-align: right;">
                                         <button type="button" class="btn" style="background-color: #F7F4EC; color: #2D2A24; font-weight: 500; border-radius: 8px; padding: 0.5rem 1rem;" onclick="closeModal('dataModal-{{ sub.id }}');">关闭</button>
@@ -411,5 +428,119 @@
             });
         });
     });
+</script>
+
+<!-- B16 续：附件预览模态框 -->
+<div id="attachments-modal" style="display:none;position:fixed;inset:0;background:rgba(20,17,12,0.55);z-index:1060;align-items:center;justify-content:center;padding:1rem;">
+    <div style="background:#fff;border-radius:14px;max-width:840px;width:100%;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;border:1px solid #E5E0D8;">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:1rem 1.25rem;border-bottom:1px solid #E5E0D8;background:#F7F4EC;">
+            <div>
+                <h5 style="margin:0;color:#141413;font-weight:600;font-size:1.05rem;"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style="vertical-align:-2px;margin-right:4px;"><path d="M4.5 3a2.5 2.5 0 0 1 5 0v9a1.5 1.5 0 0 1-3 0V5a.5.5 0 0 1 1 0v7a.5.5 0 0 0 1 0V3a1.5 1.5 0 1 0-3 0v9a2.5 2.5 0 0 0 5 0V5a.5.5 0 0 1 1 0v7a3.5 3.5 0 1 1-7 0V3z"/></svg> 提交附件</h5>
+                <p id="attachments-modal-sub" style="margin:0.2rem 0 0;color:#6B6760;font-size:0.82rem;"></p>
+            </div>
+            <button type="button" id="attachments-modal-close" style="background:transparent;border:none;font-size:1.5rem;color:#6B6760;cursor:pointer;padding:0 0.4rem;line-height:1;">×</button>
+        </div>
+        <div id="attachments-modal-body" style="padding:1.25rem;overflow-y:auto;flex:1;"></div>
+    </div>
+</div>
+
+<script>
+function openAttachmentsModal(attachments, submissionId) {
+    if (!attachments || !attachments.length) return;
+    var modal = document.getElementById('attachments-modal');
+    var body = document.getElementById('attachments-modal-body');
+    var sub = document.getElementById('attachments-modal-sub');
+    sub.textContent = '提交 #' + submissionId + ' · 共 ' + attachments.length + ' 个附件';
+
+    function escHtml(s) {
+        return (s || '').replace(/[&<>"']/g, function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]);});
+    }
+    function fmtSize(n) {
+        if (!n) return '—';
+        if (n < 1024) return n + ' B';
+        if (n < 1024 * 1024) return Math.round(n / 1024) + ' KB';
+        return (n / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    body.innerHTML = attachments.map(function (a) {
+        var url = a.url;
+        var name = escHtml(a.name || '附件');
+        var field = escHtml(a.field || '');
+        var ext = (a.ext || '').toLowerCase();
+        var size = fmtSize(a.size);
+        var meta = '<div style="color:#6B6760;font-size:0.82rem;margin-top:0.3rem;">' +
+                   (field ? '字段：<strong>' + field + '</strong> · ' : '') +
+                   '类型 .' + escHtml(ext) + ' · ' + size + '</div>';
+        var actions = '<div style="margin-top:0.4rem;display:flex;gap:0.4rem;flex-wrap:wrap;">' +
+                      '<a href="' + url + '" target="_blank" rel="noopener" class="btn" style="background:#141413;color:#F7F4EC;border-radius:6px;padding:0.3rem 0.7rem;font-size:0.85rem;text-decoration:none;">新窗口打开</a>' +
+                      '<a href="' + url + '" download="' + name + '" class="btn" style="background:#5B7553;color:white;border-radius:6px;padding:0.3rem 0.7rem;font-size:0.85rem;text-decoration:none;">下载</a>' +
+                      '<button type="button" class="btn" data-reveal-path="' + url + '" style="background:#D97757;color:white;border:none;border-radius:6px;padding:0.3rem 0.7rem;font-size:0.85rem;cursor:pointer;" title="在运行 OpenMentor 的那台电脑上打开文件夹定位此文件">在本机打开文件夹</button>' +
+                      '</div>';
+        var preview;
+        if (a.is_image || /^(png|jpg|jpeg|gif|webp|bmp|svg)$/.test(ext)) {
+            preview = '<img src="' + url + '" alt="' + name + '" style="max-width:100%;max-height:380px;border-radius:6px;border:1px solid #E5E0D8;cursor:zoom-in;" onclick="window.open(\'' + url + '\',\'_blank\')">';
+        } else if (ext === 'pdf') {
+            preview = '<embed src="' + url + '" type="application/pdf" style="width:100%;height:480px;border:1px solid #E5E0D8;border-radius:6px;background:#fff;">';
+        } else if (/^(mp4|webm|mov|m4v)$/.test(ext)) {
+            preview = '<video src="' + url + '" controls style="width:100%;max-height:380px;border-radius:6px;border:1px solid #E5E0D8;background:#000;"></video>';
+        } else if (/^(mp3|wav|m4a|aac|ogg)$/.test(ext)) {
+            preview = '<audio src="' + url + '" controls style="width:100%;"></audio>';
+        } else if (/^(txt|md|markdown|csv|tsv|json|yaml|yml|xml|html|htm|log)$/.test(ext)) {
+            preview = '<iframe src="' + url + '" style="width:100%;height:340px;border:1px solid #E5E0D8;border-radius:6px;background:#fff;"></iframe>';
+        } else {
+            preview = '<div style="padding:1.2rem;background:#F7F4EC;border:1px dashed #C9C3B8;border-radius:6px;color:#6B6760;text-align:center;">此格式无法在线预览，请点下方「下载」</div>';
+        }
+        return '<div style="margin-bottom:1rem;padding-bottom:1rem;border-bottom:1px solid #E5E0D8;">' +
+               '<div style="font-weight:600;color:#141413;word-break:break-all;">' + name + '</div>' +
+               meta +
+               '<div style="margin-top:0.6rem;">' + preview + '</div>' +
+               actions +
+               '</div>';
+    }).join('');
+
+    modal.style.display = 'flex';
+}
+
+function closeAttachmentsModal() {
+    var modal = document.getElementById('attachments-modal');
+    modal.style.display = 'none';
+    document.getElementById('attachments-modal-body').innerHTML = '';
+}
+
+// 在服务器本机打开文件夹（事件委托，因为按钮是动态生成的）
+document.getElementById('attachments-modal-body').addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-reveal-path]');
+    if (!btn) return;
+    var path = btn.getAttribute('data-reveal-path');
+    if (!path) return;
+    btn.disabled = true;
+    var orig = btn.textContent;
+    btn.textContent = '正在打开...';
+    var fd = new FormData();
+    fd.append('path', path);
+    fetch('/attachment/reveal', {method: 'POST', body: fd})
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            btn.disabled = false;
+            btn.textContent = orig;
+            if (!d.success) alert(d.message || '打开失败');
+        })
+        .catch(function(e) {
+            btn.disabled = false;
+            btn.textContent = orig;
+            alert('网络错误：' + e.message);
+        });
+});
+
+document.getElementById('attachments-modal-close').addEventListener('click', closeAttachmentsModal);
+document.getElementById('attachments-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeAttachmentsModal();
+});
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        var m = document.getElementById('attachments-modal');
+        if (m && m.style.display !== 'none') closeAttachmentsModal();
+    }
+});
 </script>
 {% endblock %}

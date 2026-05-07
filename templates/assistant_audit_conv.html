@@ -51,6 +51,12 @@
                 <a href="{{ url_for('assistant_audit', assistant_id=assistant.id) }}" class="btn btn-secondary btn-sm">
                     <i class="bi bi-arrow-left"></i> 返回审计
                 </a>
+                <button class="btn btn-sm btn-primary" id="btn-student-report">
+                    <i class="bi bi-magic"></i> 生成 AI 学情报告
+                </button>
+                <button class="btn btn-sm btn-outline-primary" id="btn-student-report-history">
+                    <i class="bi bi-archive"></i> 历史报告
+                </button>
                 <button class="btn btn-sm btn-outline-{{ 'success' if conversation.is_blocked else 'danger' }}" id="btn-block">
                     {{ '解禁该学生' if conversation.is_blocked else '封禁该学生' }}
                 </button>
@@ -222,8 +228,195 @@
             .then(d => { btn.disabled = false; if (d.success) refresh(); else alert(d.message); });
     });
 
+    // B12: 生成单学生 AI 学情报告
+    document.getElementById('btn-student-report').addEventListener('click', function () {
+        var btn = this;
+        var origLabel = btn.innerHTML;
+        var className = {{ conversation.student_class | tojson }};
+        var studentName = {{ conversation.student_name | tojson }};
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>AI 生成中...';
+        var fd = new FormData();
+        fd.append('student_class', className);
+        fd.append('student_name', studentName);
+        fetch(`/assistant/${ASSISTANT_ID}/audit/student_report`, {method: 'POST', body: fd})
+            .then(r => r.json())
+            .then(function (d) {
+                btn.disabled = false;
+                btn.innerHTML = origLabel;
+                if (!d.success) {
+                    alert(d.message || '生成失败');
+                    return;
+                }
+                showReportModal({
+                    title: `${d.student_class} · ${d.student_name} · 学情报告`,
+                    subtitle: `AI 助教「${d.assistant_title}」 · ${d.session_count} 个会话 · ${d.message_count} 条消息 · 由 ${d.model_used} 生成`,
+                    markdown: d.report,
+                    filename: `${d.student_class}_${d.student_name}_学情报告_${new Date().toISOString().slice(0,10)}.md`,
+                });
+            })
+            .catch(function (e) {
+                btn.disabled = false;
+                btn.innerHTML = origLabel;
+                alert('网络异常：' + e);
+            });
+    });
+
+    // B14: 历史报告（仅过滤这位学生的）
+    document.getElementById('btn-student-report-history').addEventListener('click', function () {
+        var className = {{ conversation.student_class | tojson }};
+        var studentName = {{ conversation.student_name | tojson }};
+        showReportHistoryModal({
+            student_class: className,
+            student_name: studentName,
+            report_type: 'student',
+        });
+    });
+
+    function showReportHistoryModal(filterParams) {
+        var existing = document.getElementById('om-report-history-modal');
+        if (existing) existing.remove();
+        var wrap = document.createElement('div');
+        wrap.id = 'om-report-history-modal';
+        wrap.style.cssText = 'position:fixed;inset:0;background:rgba(20,17,12,0.55);z-index:1000;display:flex;align-items:center;justify-content:center;padding:1rem;';
+        wrap.innerHTML = `
+            <div style="background:var(--om-paper);border-radius:14px;max-width:720px;width:100%;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--om-border);">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:1rem 1.25rem;border-bottom:1px solid var(--om-border);">
+                    <div>
+                        <h4 style="margin:0;color:var(--om-ink);font-weight:600;font-size:1.05rem;"><i class="bi bi-archive"></i> 这位学生的 AI 报告</h4>
+                        <p style="margin:0.25rem 0 0;color:var(--om-muted);font-size:0.82rem;" id="om-rh-subtitle">加载中...</p>
+                    </div>
+                    <button type="button" id="om-rh-close" style="background:transparent;border:none;font-size:1.4rem;color:var(--om-muted);cursor:pointer;padding:0 0.4rem;line-height:1;">×</button>
+                </div>
+                <div id="om-rh-list" style="padding:0.5rem 0;overflow-y:auto;flex:1;"></div>
+            </div>`;
+        document.body.appendChild(wrap);
+        document.getElementById('om-rh-close').onclick = () => wrap.remove();
+        wrap.addEventListener('click', e => { if (e.target === wrap) wrap.remove(); });
+        loadReportHistory(filterParams);
+    }
+
+    function loadReportHistory(filterParams) {
+        var qs = '';
+        if (filterParams) {
+            var parts = [];
+            for (var k in filterParams) {
+                if (filterParams[k]) parts.push(encodeURIComponent(k) + '=' + encodeURIComponent(filterParams[k]));
+            }
+            if (parts.length) qs = '?' + parts.join('&');
+        }
+        fetch(`/assistant/${ASSISTANT_ID}/audit/reports${qs}`)
+            .then(r => r.json())
+            .then(function (d) {
+                var listEl = document.getElementById('om-rh-list');
+                var subEl = document.getElementById('om-rh-subtitle');
+                if (!listEl) return;
+                var items = d.reports || [];
+                subEl.textContent = items.length === 0
+                    ? '该学生还没有任何历史报告'
+                    : `共 ${items.length} 条报告`;
+                if (items.length === 0) {
+                    listEl.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--om-muted);">点击上方「生成 AI 学情报告」即可创建第一份</div>';
+                    return;
+                }
+                listEl.innerHTML = items.map(function (r) {
+                    return `
+                    <div style="padding:0.7rem 1.25rem;border-bottom:1px solid var(--om-border);display:flex;justify-content:space-between;gap:0.75rem;align-items:center;">
+                        <div style="min-width:0;flex:1;">
+                            <strong style="color:var(--om-ink);">${escapeHtml(r.scope_label || '—')}</strong>
+                            <div style="color:var(--om-muted);font-size:0.78rem;margin-top:0.2rem;">
+                                ${escapeHtml(r.created_at || '')} · ${r.message_count || 0} 条消息 · ${escapeHtml(r.model_used || '')}
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:0.4rem;flex-shrink:0;">
+                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="viewHistoryReport(${r.id})">查看</button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteHistoryReport(${r.id}, this)">删除</button>
+                        </div>
+                    </div>`;
+                }).join('');
+            })
+            .catch(e => alert('加载失败：' + e));
+    }
+
+    window.viewHistoryReport = function (id) {
+        fetch(`/assistant/${ASSISTANT_ID}/audit/reports/${id}`)
+            .then(r => r.json())
+            .then(function (d) {
+                if (!d.success) { alert(d.message || '加载失败'); return; }
+                var safeName = (d.scope_label || 'report').replace(/[\\/:*?"<>|]/g, '_');
+                showReportModal({
+                    title: `${d.assistant_title} · ${d.scope_label} · 学情报告`,
+                    subtitle: `${d.created_at || ''} · ${d.student_count || 0} 人 / ${d.message_count || 0} 条消息 · 由 ${d.model_used || ''} 生成`,
+                    markdown: d.content,
+                    filename: `${safeName}_学情报告_${(d.created_at || '').slice(0,10)}.md`,
+                });
+            });
+    };
+
+    window.deleteHistoryReport = function (id, btn) {
+        if (!confirm('确定删除这份历史报告？')) return;
+        btn.disabled = true;
+        fetch(`/assistant/${ASSISTANT_ID}/audit/reports/${id}/delete`, {method: 'POST'})
+            .then(r => r.json())
+            .then(function (d) {
+                if (d.success) {
+                    var className = {{ conversation.student_class | tojson }};
+                    var studentName = {{ conversation.student_name | tojson }};
+                    loadReportHistory({student_class: className, student_name: studentName, report_type: 'student'});
+                }
+                else { alert(d.message || '删除失败'); btn.disabled = false; }
+            })
+            .catch(e => { alert('网络异常：' + e); btn.disabled = false; });
+    };
+
+    // 报告弹窗（学生 / 班级共用）
+    window.showReportModal = function (opts) {
+        var existing = document.getElementById('om-report-modal');
+        if (existing) existing.remove();
+        var wrap = document.createElement('div');
+        wrap.id = 'om-report-modal';
+        wrap.style.cssText = 'position:fixed;inset:0;background:rgba(20,17,12,0.55);z-index:1000;display:flex;align-items:center;justify-content:center;padding:1rem;';
+        wrap.innerHTML = `
+            <div style="background:var(--om-paper);border-radius:14px;max-width:780px;width:100%;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--om-border);">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:1rem 1.25rem;border-bottom:1px solid var(--om-border);gap:1rem;">
+                    <div style="min-width:0;flex:1;">
+                        <h4 style="margin:0;color:var(--om-ink);font-weight:600;font-size:1.05rem;">${opts.title}</h4>
+                        <p style="margin:0.25rem 0 0;color:var(--om-muted);font-size:0.82rem;">${opts.subtitle}</p>
+                    </div>
+                    <button type="button" id="om-report-close" style="background:transparent;border:none;font-size:1.4rem;color:var(--om-muted);cursor:pointer;padding:0 0.4rem;line-height:1;">×</button>
+                </div>
+                <div id="om-report-body" style="padding:1rem 1.25rem;overflow-y:auto;flex:1;line-height:1.7;color:var(--om-ink);"></div>
+                <div style="padding:0.75rem 1.25rem;border-top:1px solid var(--om-border);display:flex;gap:0.5rem;justify-content:flex-end;">
+                    <button type="button" id="om-report-copy" class="btn btn-secondary btn-sm">复制 Markdown</button>
+                    <button type="button" id="om-report-download" class="btn btn-primary btn-sm">下载 .md</button>
+                </div>
+            </div>`;
+        document.body.appendChild(wrap);
+        var bodyEl = document.getElementById('om-report-body');
+        bodyEl.innerHTML = (window.marked && window.marked.parse) ? window.marked.parse(opts.markdown) : ('<pre style="white-space:pre-wrap;">' + escapeHtml(opts.markdown) + '</pre>');
+        document.getElementById('om-report-close').onclick = function () { wrap.remove(); };
+        wrap.addEventListener('click', function (e) { if (e.target === wrap) wrap.remove(); });
+        document.getElementById('om-report-copy').onclick = function () {
+            try {
+                navigator.clipboard.writeText(opts.markdown);
+                this.textContent = '已复制 ✓';
+                setTimeout(() => { this.textContent = '复制 Markdown'; }, 1500);
+            } catch (err) { alert('请手动选中复制'); }
+        };
+        document.getElementById('om-report-download').onclick = function () {
+            var blob = new Blob([opts.markdown], {type: 'text/markdown;charset=utf-8'});
+            var a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = opts.filename;
+            document.body.appendChild(a); a.click();
+            setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(a.href); }, 100);
+        };
+    };
+
     refresh();
     setInterval(refresh, 5000);
 })();
 </script>
+<!-- 报告里渲染 Markdown 用 -->
+<script src="{{ url_for('static', filename='vendor/marked/marked.min.js') }}"></script>
 {% endblock %}

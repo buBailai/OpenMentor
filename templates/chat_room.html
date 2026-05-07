@@ -748,14 +748,17 @@
                 genError.style.display = 'block';
                 return;
             }
-            genSubmit.disabled = true;
-            genSubmit.textContent = '生成中...';
             genError.style.display = 'none';
 
             // 在主对话区先渲染 user 请求 + 占位
             appendMessage('user', `[生成图片] ${prompt}`);
             const placeholderBubble = appendMessage('assistant', '正在生成图片，可能需要 5-30 秒...');
             placeholderBubble.classList.add('typing-dot');
+
+            // 立即关闭浮窗回到对话界面，让用户在主区看到生成进度
+            closeGenModal();
+            genPrompt.value = '';
+            scrollToBottom();
 
             try {
                 const r = await fetch(apiUrl('/generate_image'), {
@@ -770,16 +773,11 @@
                     placeholderBubble.parentElement.remove();
                     appendMessage('system', data.notice || '该描述不适合用来生成图片');
                     if (typeof data.daily_used === 'number') { dailyUsed = data.daily_used; updateQuotaBadge(); }
-                    closeGenModal();
                     return;
                 }
                 if (!r.ok || !data.success) {
                     placeholderBubble.innerHTML = renderMarkdown(`图片生成失败：${data.message || '未知错误'}`);
                     if (typeof data.daily_used === 'number') { dailyUsed = data.daily_used; updateQuotaBadge(); }
-                    genError.textContent = data.message || '生成失败';
-                    genError.style.display = 'block';
-                    genSubmit.disabled = false;
-                    genSubmit.textContent = '生成';
                     return;
                 }
                 // 成功：替换占位 bubble 为生成图
@@ -798,15 +796,9 @@
                 placeholderBubble.appendChild(wrap);
                 scrollToBottom();
                 if (typeof data.daily_used === 'number') { dailyUsed = data.daily_used; updateQuotaBadge(); }
-                closeGenModal();
             } catch (e) {
                 placeholderBubble.classList.remove('typing-dot');
                 placeholderBubble.innerHTML = renderMarkdown('生成失败：' + e.message);
-                genError.textContent = e.message;
-                genError.style.display = 'block';
-            } finally {
-                genSubmit.disabled = false;
-                genSubmit.textContent = '生成';
             }
         }
         genSubmit.addEventListener('click', submitGenerate);

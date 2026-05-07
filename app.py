@@ -234,6 +234,24 @@ class RosterEntry(Base):
     )
 
 
+class StudentReport(Base):
+    """B14: AI 生成的学情报告（单学生 / 全班）持久化。"""
+    __tablename__ = 'student_report'
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('user.id'), nullable=False, index=True)
+    assistant_id = Column(Integer, ForeignKey('task.id'), nullable=False, index=True)
+    report_type = Column(String(20), nullable=False)        # 'student' / 'class'
+    student_class = Column(String(100))                     # 单学生：班级；班级报告：班级筛选（可空）
+    student_name = Column(String(100))                      # 单学生：姓名；班级报告：空
+    scope_label = Column(String(200))                       # 显示标签（如「四年2班 · 张三」「全部学生」）
+    content = Column(Text, nullable=False)                  # Markdown 全文
+    model_used = Column(String(50))
+    student_count = Column(Integer)
+    message_count = Column(Integer)
+    omitted = Column(Integer)
+    created_at = Column(DateTime, default=datetime.now, index=True)
+
+
 class ClassOption(Base):
     """B9: 自由填写模式下的"年级 / 班级"下拉选项（仅 roster_mode=off 使用）
     每位老师维护一份年级+班级清单，避免学生手填的班级名五花八门，便于聚合。
@@ -1463,7 +1481,26 @@ def task_detail(task_id):
             return redirect(url_for('dashboard'))
         
         submission = db.query(Submission).filter_by(task_id=task.id).order_by(Submission.submitted_at.desc()).all()
-        return render_template('task_detail.html', task=task, submission=submission)
+
+        # B16 续：把每条预解析一下，分离附件，方便模板渲染"查看附件"按钮 + 模态框
+        items = []
+        for sub in submission:
+            attachments = []
+            display_data = sub.data
+            try:
+                parsed = json.loads(sub.data)
+                if isinstance(parsed, dict) and '_attachments' in parsed:
+                    attachments = parsed.get('_attachments') or []
+                    main_dict = {k: v for k, v in parsed.items() if k != '_attachments'}
+                    display_data = json.dumps(main_dict, ensure_ascii=False, indent=2)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                pass
+            # 复用一个简单包装对象，保留 sub.id / sub.submitted_at 给模板
+            sub.display_data = display_data
+            sub.attachments = attachments
+            items.append(sub)
+
+        return render_template('task_detail.html', task=task, submission=items)
     finally:
         db.close()
 
@@ -1481,18 +1518,38 @@ def task_data_view(task_id):
             return redirect(url_for('dashboard'))
         
         submission = db.query(Submission).filter_by(task_id=task.id).order_by(Submission.submitted_at.desc()).all()
-        
+
+        # B16: 把每条记录预解析一下，把附件单独抽出来供模板渲染缩略图 / 下载链接
+        items = []
+        for sub in submission:
+            attachments = []
+            display_data = sub.data
+            try:
+                parsed = json.loads(sub.data)
+                if isinstance(parsed, dict) and '_attachments' in parsed:
+                    attachments = parsed.get('_attachments') or []
+                    main_dict = {k: v for k, v in parsed.items() if k != '_attachments'}
+                    display_data = json.dumps(main_dict, ensure_ascii=False, indent=2)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                pass
+            items.append({
+                'id': sub.id,
+                'submitted_at': sub.submitted_at,
+                'display_data': display_data,
+                'attachments': attachments,
+            })
+
         class SimplePagination:
             def __init__(self, page, per_page, total):
                 self.page = page
                 self.per_page = per_page
                 self.total = total
                 self.pages = 1
-        
+
         total_submissions = len(submission)
         pagination = SimplePagination(1, 10, total_submissions)
-        
-        return render_template('task_data_view.html', task=task, submissions=submission, total_submissions=total_submissions, pagination=pagination)
+
+        return render_template('task_data_view.html', task=task, submissions=items, total_submissions=total_submissions, pagination=pagination)
     finally:
         db.close()
 
@@ -1805,8 +1862,7 @@ def submit_form(task_id):
                     'id': sub.id,
                     'submitted_at': sub.submitted_at.strftime('%Y-%m-%d %H:%M:%S')
                 })
-            # 直接构建JSON字符串以确保键的顺序
-            import json
+            # 直接构建JSON字符串以确保键的顺序（json 已在模块顶部 import）
             submission_count = len(all_data)
             response_data = {
                 'note': f'Total {submission_count} submission(s).',
@@ -1824,7 +1880,7 @@ def submit_form(task_id):
         
         # 处理POST请求 - 回收数据
         form_data = {}
-        
+
         # 检查Content-Type并选择合适的数据获取方式
         if request.is_json:
             # 如果是JSON请求，尝试获取JSON数据
@@ -1836,7 +1892,7 @@ def submit_form(task_id):
         else:
             # 如果不是JSON请求，获取表单数据
             form_data = request.form.to_dict()
-        
+
         # 如果表单数据仍然为空，尝试从请求体获取原始数据
         if not form_data:
             try:
@@ -1844,12 +1900,33 @@ def submit_form(task_id):
             except Exception as e:
                 logger.error(f"获取请求体数据失败: {str(e)}")
                 form_data = {}
-        
-        submission = Submission(task_id=task.id, data=str(form_data))
+
+        # B16: 处理附件上传（multipart with file fields）
+        attachments_info = []
+        upload_errors = []
+        if request.files:
+            # 只在 form_data 是 dict 时才能附加 _attachments；如果是字符串（raw body）就不动
+            attachments_info, upload_errors = _save_quickform_uploads(request.files, task.task_id)
+            if attachments_info and isinstance(form_data, dict):
+                form_data['_attachments'] = attachments_info
+
+        # 序列化：如果带附件 → JSON（保证 _attachments 可解析）；否则保持原 str(form_data) 行为不破坏旧消费者
+        if attachments_info and isinstance(form_data, dict):
+            stored_data = json.dumps(form_data, ensure_ascii=False)
+        else:
+            stored_data = str(form_data)
+        submission = Submission(task_id=task.id, data=stored_data)
         db.add(submission)
         db.commit()
-        
-        response = jsonify({'message': '提交成功'})
+
+        response_payload = {'message': '提交成功'}
+        if attachments_info:
+            response_payload['attachments'] = [
+                {'name': a['name'], 'url': a['url'], 'size': a['size']} for a in attachments_info
+            ]
+        if upload_errors:
+            response_payload['upload_warnings'] = upload_errors
+        response = jsonify(response_payload)
         response.headers['Access-Control-Allow-Origin'] = '*'
         return response, 200
     finally:
@@ -3038,6 +3115,416 @@ def assistant_audit_export(assistant_id):
         db.close()
 
 
+# ============ B12 / B13: AI 学情报告 ============
+
+# 单条对话条目格式化的字符长度上限（避免 token 爆炸）
+_REPORT_MAX_CONTENT_PER_MSG = 400
+_REPORT_MAX_TOTAL_CHARS = 30000  # 喂给 AI 的总字符数上限（约 ~12K tokens）
+
+
+def _format_messages_for_report(conv, max_per_msg=_REPORT_MAX_CONTENT_PER_MSG):
+    """把一段会话格式化成 AI 可读的对话片段。"""
+    lines = []
+    for m in conv.messages:
+        role_label = {'user': '学生', 'assistant': 'AI', 'system': '系统'}.get(m.role, m.role)
+        text = (m.content or '').strip().replace('\n', ' ')
+        if len(text) > max_per_msg:
+            text = text[:max_per_msg] + '...'
+        if m.triggered_keyword:
+            text += f' [命中关键词: {m.triggered_keyword}]'
+        if m.rating == 1:
+            text += ' [学生👍]'
+        elif m.rating == -1:
+            text += ' [学生👎]'
+        lines.append(f'  {role_label}: {text}')
+    return '\n'.join(lines)
+
+
+def _truncate_to_total(blocks, total_limit):
+    """按总字符数截断 blocks，超过的部分丢弃并加注省略说明。"""
+    out = []
+    used = 0
+    omitted = 0
+    for b in blocks:
+        if used + len(b) > total_limit:
+            omitted += 1
+            continue
+        out.append(b)
+        used += len(b)
+    return out, omitted
+
+
+def _generate_report_via_ai(meta_prompt, ai_config):
+    """复用 call_ai_model；返回 (text, error)"""
+    try:
+        text = call_ai_model(meta_prompt, ai_config)
+    except Exception as e:
+        logger.exception('生成 AI 报告失败')
+        return None, str(e)
+    if not text or not text.strip():
+        return None, 'AI 返回空内容，请重试'
+    return text.strip(), None
+
+
+@app.route('/assistant/<int:assistant_id>/audit/student_report', methods=['POST'])
+@login_required
+def assistant_student_report(assistant_id):
+    """B12：单学生 AI 学情报告。
+    POST 参数：student_class, student_name
+    返回：{ code, success, report (markdown), session_count, message_count }
+    """
+    db = SessionLocal()
+    try:
+        assistant = db.query(Task).filter_by(id=assistant_id, user_id=current_user.id, is_assistant=True).first()
+        if not assistant:
+            return jsonify({'code': 404, 'message': 'AI 导师不存在或无权访问'}), 404
+
+        student_class = (request.form.get('student_class') or '').strip()
+        student_name = (request.form.get('student_name') or '').strip()
+        if not student_class or not student_name:
+            return jsonify({'code': 400, 'message': '缺少 student_class / student_name'}), 400
+
+        convs = db.query(Conversation).filter_by(
+            assistant_id=assistant.id,
+            student_class=student_class,
+            student_name=student_name,
+        ).order_by(Conversation.started_at).all()
+        total_msgs = sum(len(c.messages) for c in convs)
+        if not convs or total_msgs == 0:
+            return jsonify({'code': 400, 'message': '该学生暂无对话记录'}), 400
+
+        # 拼接对话
+        blocks = []
+        for i, c in enumerate(convs, 1):
+            session_label = f'### 设备会话 {i}（{c.started_at.strftime("%Y-%m-%d %H:%M") if c.started_at else "?"}）\n'
+            blocks.append(session_label + _format_messages_for_report(c) + '\n')
+        truncated_blocks, omitted = _truncate_to_total(blocks, _REPORT_MAX_TOTAL_CHARS)
+        if not truncated_blocks:
+            return jsonify({'code': 400, 'message': '对话内容超出可分析长度'}), 400
+        chat_text = '\n'.join(truncated_blocks)
+
+        meta_prompt = f"""你是一位有教育心理学背景的学情分析师。请基于以下"学生与 AI 助教"的对话记录，为老师生成一份学情报告。
+
+【AI 助教信息】
+- 助教名称：{assistant.title}
+- 助教定位：{(assistant.description or '（未设置）')[:200]}
+
+【学生信息】
+- 班级：{student_class}
+- 姓名：{student_name}
+- 共 {len(convs)} 个设备会话，{total_msgs} 条消息（{'已截取重要片段，省略 ' + str(omitted) + ' 段' if omitted else '完整记录'}）
+
+【对话记录】
+{chat_text}
+
+请输出一份**结构化、可执行**的 Markdown 报告，包含以下模块（每个模块 2-4 句话即可，避免空话）：
+
+## 一、学习画像
+（提问类型分布、关注的学科 / 知识点、学习风格初判）
+
+## 二、知识盲点
+（从提问中能看出来的薄弱点、概念误区，列 2-5 条）
+
+## 三、AI 互动效果
+（学生评分情况、是否真在思考还是只想要答案、AI 回应是否到位）
+
+## 四、安全与态度
+（是否触发黑名单、整体提问态度是否积极，有无异常）
+
+## 五、给老师的建议
+（针对这位学生的下一步辅导建议，列 2-3 条具体可操作的）
+
+要求：
+- 中文输出，事实就事实，不要空泛赞美
+- 涉及具体提问时可以引用学生原话作为论据（用「」括起来）
+- 不要重复"学生"两个字开头每段，直接陈述"知识画像显示..."这样
+- 总长度控制在 800-1200 字
+- 直接输出 Markdown 正文，不要包代码块"""
+
+        ai_config = db.query(AIConfig).filter_by(user_id=current_user.id).first()
+        if not ai_config:
+            return jsonify({'code': 500, 'message': '请先在「AI 配置」中选择并配置 AI 模型'}), 500
+        cur_cfg = next((mc for mc in ai_config.model_configs if mc.model_name == ai_config.selected_model), None)
+        if (not cur_cfg or not (cur_cfg.api_key or '').strip()) and ai_config.selected_model != 'ollama':
+            return jsonify({'code': 500, 'message': f'当前选中的 {ai_config.selected_model} 未配置 API Key'}), 500
+
+        report, err = _generate_report_via_ai(meta_prompt, ai_config)
+        if err:
+            return jsonify({'code': 500, 'message': f'生成失败：{err}'}), 500
+
+        # B14: 持久化到 student_report
+        rec = StudentReport(
+            user_id=current_user.id,
+            assistant_id=assistant.id,
+            report_type='student',
+            student_class=student_class,
+            student_name=student_name,
+            scope_label=f'{student_class} · {student_name}',
+            content=report,
+            model_used=ai_config.selected_model,
+            student_count=1,
+            message_count=total_msgs,
+            omitted=omitted,
+        )
+        db.add(rec)
+        db.commit()
+        db.refresh(rec)
+
+        return jsonify({
+            'code': 200,
+            'success': True,
+            'report_id': rec.id,
+            'report': report,
+            'session_count': len(convs),
+            'message_count': total_msgs,
+            'omitted_blocks': omitted,
+            'model_used': ai_config.selected_model,
+            'student_class': student_class,
+            'student_name': student_name,
+            'assistant_title': assistant.title,
+            'created_at': rec.created_at.strftime('%Y-%m-%d %H:%M'),
+        })
+    finally:
+        db.close()
+
+
+@app.route('/assistant/<int:assistant_id>/audit/class_report', methods=['POST'])
+@login_required
+def assistant_class_report(assistant_id):
+    """B13：按班级（或全部）的全班学情报告。
+    POST 参数：class_name（可空 = 全部学生）
+    """
+    db = SessionLocal()
+    try:
+        assistant = db.query(Task).filter_by(id=assistant_id, user_id=current_user.id, is_assistant=True).first()
+        if not assistant:
+            return jsonify({'code': 404, 'message': 'AI 导师不存在或无权访问'}), 404
+
+        class_filter = (request.form.get('class_name') or '').strip()
+        q = db.query(Conversation).filter_by(assistant_id=assistant.id)
+        if class_filter:
+            q = q.filter(Conversation.student_class == class_filter)
+        convs = q.order_by(Conversation.student_class, Conversation.student_name, Conversation.started_at).all()
+        if not convs:
+            return jsonify({'code': 400, 'message': '没有匹配的对话记录'}), 400
+
+        # 按 (class, name) 聚合
+        grouped = {}
+        for c in convs:
+            key = (c.student_class, c.student_name)
+            grouped.setdefault(key, []).append(c)
+
+        student_count = len(grouped)
+        total_msgs = sum(len(c.messages) for c in convs)
+        if total_msgs == 0:
+            return jsonify({'code': 400, 'message': '没有可分析的消息'}), 400
+
+        blocks = []
+        for (cls, name), conv_list in grouped.items():
+            stu_msgs = sum(len(c.messages) for c in conv_list)
+            header = f'### {cls} · {name}（{len(conv_list)} 个会话，共 {stu_msgs} 条消息）\n'
+            stu_lines = []
+            for c in conv_list:
+                stu_lines.append(_format_messages_for_report(c))
+            blocks.append(header + '\n'.join(stu_lines) + '\n')
+        truncated_blocks, omitted = _truncate_to_total(blocks, _REPORT_MAX_TOTAL_CHARS)
+        if not truncated_blocks:
+            return jsonify({'code': 400, 'message': '对话内容过多，请按班级缩小范围后再生成'}), 400
+        chat_text = '\n'.join(truncated_blocks)
+
+        scope_label = f'班级「{class_filter}」' if class_filter else '全部学生'
+        meta_prompt = f"""你是一位有教育心理学背景的学情分析师。请基于以下"AI 助教 {scope_label}"的全部对话记录，为老师生成一份**班级级别**的学情报告。
+
+【AI 助教信息】
+- 助教名称：{assistant.title}
+- 助教定位：{(assistant.description or '（未设置）')[:200]}
+
+【数据范围】
+- 范围：{scope_label}
+- 学生数：{student_count}
+- 消息总数：{total_msgs}
+- {'数据较多已截取最多 ' + str(len(truncated_blocks)) + ' 个学生的数据，省略 ' + str(omitted) + ' 个学生' if omitted else '完整记录'}
+
+【对话记录（按学生分组）】
+{chat_text}
+
+请输出一份**结构化、可执行**的 Markdown 报告：
+
+## 一、整体使用情况
+（活跃度概览：高活跃学生、沉默学生、平均提问数；无需具体名单，给量级判断即可）
+
+## 二、共性知识盲点
+（从全班提问中归纳出最频繁的疑惑点、错误概念，列 3-6 条，配学生原话做佐证）
+
+## 三、提问类型分布
+（学生主要是在求"答案"、求"思路"还是求"解释"？反映学习风格）
+
+## 四、AI 互动质量
+（满意度概况、AI 回应有无系统性偏差、有无被学生用来作弊或越狱的迹象）
+
+## 五、值得老师关注的学生
+（最多 3-5 名：行为有异常、知识盲点突出、或被 AI 帮了很多但没真正学会的）
+
+## 六、教学改进建议
+（针对这个班级 / 这次使用，给老师下一步教学的 3 条具体建议）
+
+要求：
+- 中文输出，避免空泛话
+- 涉及具体学生时只在第五部分点名，前几部分用类型化描述
+- 引用对话原话时用「」括起来
+- 总长度控制在 1200-1800 字
+- 直接输出 Markdown 正文，不要包代码块"""
+
+        ai_config = db.query(AIConfig).filter_by(user_id=current_user.id).first()
+        if not ai_config:
+            return jsonify({'code': 500, 'message': '请先在「AI 配置」中选择并配置 AI 模型'}), 500
+        cur_cfg = next((mc for mc in ai_config.model_configs if mc.model_name == ai_config.selected_model), None)
+        if (not cur_cfg or not (cur_cfg.api_key or '').strip()) and ai_config.selected_model != 'ollama':
+            return jsonify({'code': 500, 'message': f'当前选中的 {ai_config.selected_model} 未配置 API Key'}), 500
+
+        report, err = _generate_report_via_ai(meta_prompt, ai_config)
+        if err:
+            return jsonify({'code': 500, 'message': f'生成失败：{err}'}), 500
+
+        # B14: 持久化
+        rec = StudentReport(
+            user_id=current_user.id,
+            assistant_id=assistant.id,
+            report_type='class',
+            student_class=class_filter or None,
+            student_name=None,
+            scope_label=(f'班级「{class_filter}」' if class_filter else '全部学生'),
+            content=report,
+            model_used=ai_config.selected_model,
+            student_count=student_count,
+            message_count=total_msgs,
+            omitted=omitted,
+        )
+        db.add(rec)
+        db.commit()
+        db.refresh(rec)
+
+        return jsonify({
+            'code': 200,
+            'success': True,
+            'report_id': rec.id,
+            'report': report,
+            'student_count': student_count,
+            'message_count': total_msgs,
+            'omitted_students': omitted,
+            'model_used': ai_config.selected_model,
+            'class_filter': class_filter,
+            'assistant_title': assistant.title,
+            'created_at': rec.created_at.strftime('%Y-%m-%d %H:%M'),
+        })
+    finally:
+        db.close()
+
+
+@app.route('/assistant/<int:assistant_id>/audit/reports')
+@login_required
+def assistant_reports_list(assistant_id):
+    """B14: 列出该 AI 导师下当前老师所有 AI 报告（按时间倒序）。
+    Query 参数:
+      - student_class / student_name 选填，过滤到某学生
+      - report_type 选填 ('student' / 'class')
+    """
+    db = SessionLocal()
+    try:
+        assistant = db.query(Task).filter_by(id=assistant_id, user_id=current_user.id, is_assistant=True).first()
+        if not assistant:
+            return jsonify({'code': 404, 'message': 'AI 导师不存在或无权访问'}), 404
+
+        q = db.query(StudentReport).filter_by(
+            user_id=current_user.id,
+            assistant_id=assistant.id,
+        )
+        rt = (request.args.get('report_type') or '').strip()
+        if rt:
+            q = q.filter(StudentReport.report_type == rt)
+        cls = (request.args.get('student_class') or '').strip()
+        if cls:
+            q = q.filter(StudentReport.student_class == cls)
+        name = (request.args.get('student_name') or '').strip()
+        if name:
+            q = q.filter(StudentReport.student_name == name)
+
+        items = q.order_by(StudentReport.created_at.desc()).limit(200).all()
+        return jsonify({
+            'code': 200,
+            'reports': [{
+                'id': r.id,
+                'report_type': r.report_type,
+                'scope_label': r.scope_label,
+                'student_class': r.student_class,
+                'student_name': r.student_name,
+                'model_used': r.model_used,
+                'student_count': r.student_count,
+                'message_count': r.message_count,
+                'omitted': r.omitted,
+                'created_at': r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else None,
+                'snippet': (r.content or '')[:120],
+            } for r in items],
+        })
+    finally:
+        db.close()
+
+
+@app.route('/assistant/<int:assistant_id>/audit/reports/<int:report_id>')
+@login_required
+def assistant_report_detail(assistant_id, report_id):
+    """B14: 拉取单条历史报告全文。"""
+    db = SessionLocal()
+    try:
+        assistant = db.query(Task).filter_by(id=assistant_id, user_id=current_user.id, is_assistant=True).first()
+        if not assistant:
+            return jsonify({'code': 404, 'message': 'AI 导师不存在或无权访问'}), 404
+        rec = db.query(StudentReport).filter_by(
+            id=report_id, user_id=current_user.id, assistant_id=assistant.id
+        ).first()
+        if not rec:
+            return jsonify({'code': 404, 'message': '报告不存在'}), 404
+        return jsonify({
+            'code': 200,
+            'success': True,
+            'id': rec.id,
+            'report_type': rec.report_type,
+            'scope_label': rec.scope_label,
+            'student_class': rec.student_class,
+            'student_name': rec.student_name,
+            'content': rec.content,
+            'model_used': rec.model_used,
+            'student_count': rec.student_count,
+            'message_count': rec.message_count,
+            'omitted': rec.omitted,
+            'created_at': rec.created_at.strftime('%Y-%m-%d %H:%M:%S') if rec.created_at else None,
+            'assistant_title': assistant.title,
+        })
+    finally:
+        db.close()
+
+
+@app.route('/assistant/<int:assistant_id>/audit/reports/<int:report_id>/delete', methods=['POST'])
+@login_required
+def assistant_report_delete(assistant_id, report_id):
+    """B14: 删除一条历史报告。"""
+    db = SessionLocal()
+    try:
+        assistant = db.query(Task).filter_by(id=assistant_id, user_id=current_user.id, is_assistant=True).first()
+        if not assistant:
+            return jsonify({'success': False, 'message': 'AI 导师不存在'}), 404
+        rec = db.query(StudentReport).filter_by(
+            id=report_id, user_id=current_user.id, assistant_id=assistant.id
+        ).first()
+        if not rec:
+            return jsonify({'success': False, 'message': '报告不存在'}), 404
+        db.delete(rec)
+        db.commit()
+        return jsonify({'success': True})
+    finally:
+        db.close()
+
+
 @app.route('/assistant/<int:assistant_id>/toggle', methods=['POST'])
 @login_required
 def assistant_toggle(assistant_id):
@@ -3244,9 +3731,14 @@ PROMPT_META_TEMPLATE = """你是一位资深的"教育 AI 提示词工程师"，
 2. 列出 3-5 条具体可执行的行为准则（如"先引导思考再讲答案"、"用比喻代替专业术语"）
 3. 至少包含 1 个示范对话片段（学生提问 + 你的回应方式）
 4. 给出明确的边界（不答与学习无关的内容、保护未成年人、不评论政治宗教等）
-5. 800 字以内，简洁有力，可直接复制到 system prompt 字段使用
-6. 直接输出 system prompt 正文（不要包含"以下是 system prompt:"之类的开场白，也不要 Markdown 代码块包裹）
-7. 用中文撰写
+5. **如果老师上传了素材**：
+   - 先在脑内提炼素材里**最关键的 3-8 条教学内容**（核心概念 / 易错点 / 关键例子 / 学习路径）
+   - 把这些要点**精炼地**融入系统提示词（用一段简短列表或自然语言概述），让 AI 在回答时知道该引用什么、强调什么
+   - **绝对不要**把素材原文整段粘贴进 system prompt（会让提示词冗长低效）
+   - 总量上素材相关内容不超过最终 prompt 的 40%
+6. 总长度控制在 800 字以内，简洁有力，可直接复制到 system prompt 字段使用
+7. 直接输出 system prompt 正文（不要包含"以下是 system prompt:"之类的开场白，也不要 Markdown 代码块包裹）
+8. 用中文撰写
 """
 
 
@@ -3303,7 +3795,12 @@ def assistant_generate_prompt():
 
         material_section = ''
         if material_blocks:
-            material_section = '\n\n【老师上传的参考素材（请提炼其中的教学要点融入提示词）】\n' + '\n\n'.join(material_blocks) + '\n'
+            material_section = (
+                '\n\n【老师上传的参考素材】\n'
+                '（注意：以下是素材原文，**仅供你阅读理解**用，请你自己提炼要点后融入 system prompt，'
+                '不要把整段原文复制进最终输出）\n\n'
+                + '\n\n'.join(material_blocks) + '\n'
+            )
 
         draft_section = ''
         if existing_draft:
@@ -4557,17 +5054,183 @@ def _ext_of(filename):
 
 
 def _conv_upload_dir(conv_id):
-    path = os.path.join(OPENMENTOR_UPLOAD_ROOT, str(conv_id))
+    """新写入路径：static/uploads/openmentor/<YYYY-MM-DD>/<conv_id>/
+    按"自然日"分桶，避免单层文件夹太多；同一会话跨天会有多个日期子目录，互不影响。
+    旧文件保留在原 static/uploads/openmentor/<conv_id>/ 不动，由 _is_safe_attachment_path 同时识别。
+    """
+    today = datetime.now().strftime('%Y-%m-%d')
+    path = os.path.join(OPENMENTOR_UPLOAD_ROOT, today, str(conv_id))
     if not os.path.exists(path):
         os.makedirs(path, exist_ok=True)
     return path
 
 
 def _is_safe_attachment_path(rel_path, conv_id):
-    """校验路径属于本会话目录，防止跨会话偷文件"""
-    expected_prefix = os.path.normpath(os.path.join(OPENMENTOR_UPLOAD_ROOT, str(conv_id))) + os.sep
+    """校验路径属于本会话目录，防止跨会话偷文件。
+    兼容两种布局：
+      - 新（B15 加日期）：static/uploads/openmentor/<YYYY-MM-DD>/<conv_id>/...
+      - 旧：              static/uploads/openmentor/<conv_id>/...
+    """
     abs_rel = os.path.normpath(rel_path)
-    return abs_rel.startswith(expected_prefix) and os.path.exists(abs_rel)
+    if not os.path.exists(abs_rel):
+        return False
+    legacy_prefix = os.path.normpath(os.path.join(OPENMENTOR_UPLOAD_ROOT, str(conv_id))) + os.sep
+    if abs_rel.startswith(legacy_prefix):
+        return True
+    # 新布局：路径形如 OPENMENTOR_UPLOAD_ROOT/<date>/<conv_id>/...
+    parts = abs_rel.split(os.sep)
+    root_parts = os.path.normpath(OPENMENTOR_UPLOAD_ROOT).split(os.sep)
+    n = len(root_parts)
+    if len(parts) < n + 2:
+        return False
+    if parts[:n] != root_parts:
+        return False
+    # parts[n] 是日期、parts[n+1] 是 conv_id
+    if parts[n + 1] != str(conv_id):
+        return False
+    # 简单校验日期格式（10 字符 YYYY-MM-DD）
+    if len(parts[n]) != 10 or parts[n][4] != '-' or parts[n][7] != '-':
+        return False
+    return True
+
+
+# ============ B16: QuickForm 任务的附件上传 ============
+
+QUICKFORM_UPLOAD_ROOT = os.path.join('static', 'uploads', 'quickform')
+QUICKFORM_ALLOWED_EXTS = ALLOWED_IMAGE_EXTS | ALLOWED_DOC_EXTS | {
+    'mp3', 'wav', 'm4a', 'aac', 'ogg',          # 音频
+    'mp4', 'mov', 'avi', 'webm', 'mkv',          # 视频
+    'zip', 'rar', '7z',                          # 压缩包
+}
+QUICKFORM_MAX_PER_FILE = 20 * 1024 * 1024        # 单文件 20 MB（比 OpenMentor 略宽，因为可能有视频）
+QUICKFORM_MAX_PER_SUBMISSION = 80 * 1024 * 1024  # 单次提交总上限 80 MB
+
+
+def _quickform_upload_dir(task_id_short):
+    """static/uploads/quickform/<YYYY-MM-DD>/<task_id>/"""
+    today = datetime.now().strftime('%Y-%m-%d')
+    safe_id = re.sub(r'[^A-Za-z0-9_\-]', '', task_id_short or 'unknown')[:32] or 'unknown'
+    path = os.path.join(QUICKFORM_UPLOAD_ROOT, today, safe_id)
+    if not os.path.exists(path):
+        os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _save_quickform_uploads(files_storage, task_id_short):
+    """把 QuickForm 表单 multipart 中的所有文件保存到磁盘。
+    返回 (attachments, errors)：
+      - attachments: [{'field','name','url','size','ext'}, ...]
+      - errors: 友好错误消息列表（仍可继续保存其他合法文件）
+    """
+    from werkzeug.utils import secure_filename as _sec
+    attachments = []
+    errors = []
+    total_bytes = 0
+    for field in files_storage.keys():
+        for f in files_storage.getlist(field):
+            if not f or not f.filename:
+                continue
+            ext = _ext_of(f.filename)
+            if not ext or ext not in QUICKFORM_ALLOWED_EXTS:
+                errors.append(f'忽略不支持的扩展名：{f.filename}')
+                continue
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(0)
+            if size <= 0:
+                errors.append(f'忽略空文件：{f.filename}')
+                continue
+            if size > QUICKFORM_MAX_PER_FILE:
+                errors.append(f'忽略超大文件 {f.filename}（{size // (1024*1024)} MB > {QUICKFORM_MAX_PER_FILE // (1024*1024)} MB）')
+                continue
+            if total_bytes + size > QUICKFORM_MAX_PER_SUBMISSION:
+                errors.append(f'忽略 {f.filename}：本次提交累计已超过 {QUICKFORM_MAX_PER_SUBMISSION // (1024*1024)} MB 上限')
+                continue
+            original_base = os.path.splitext(f.filename)[0]
+            safe_base = _sec(original_base) or 'file'  # 中文/特殊字符回落
+            unique_name = f'{uuid.uuid4().hex[:8]}_{safe_base}.{ext}'
+            save_dir = _quickform_upload_dir(task_id_short)
+            save_path = os.path.join(save_dir, unique_name)
+            try:
+                f.save(save_path)
+            except Exception as e:
+                errors.append(f'保存 {f.filename} 失败：{e}')
+                continue
+            total_bytes += size
+            # 计算前端可访问的 URL（相对 / 绝对都可，模板自动 prefix）
+            url_path = '/' + save_path.replace(os.sep, '/')
+            attachments.append({
+                'field': field,
+                'name': f.filename,
+                'url': url_path,
+                'size': size,
+                'ext': ext,
+                'is_image': ext in ALLOWED_IMAGE_EXTS,
+            })
+    return attachments, errors
+
+
+@app.route('/attachment/reveal', methods=['POST'])
+@login_required
+def attachment_reveal():
+    """B17: 在服务器本机的文件管理器中定位/打开附件（仅本机有桌面环境时有意义）。
+    支持 QuickForm（static/uploads/quickform）和 OpenMentor（static/uploads/openmentor）两类附件。
+    """
+    import platform as _platform
+    import subprocess as _sp
+    rel = (request.form.get('path') or '').strip()
+    if not rel:
+        return jsonify({'success': False, 'message': '缺少 path'}), 400
+    abs_path = os.path.normpath(rel.lstrip('/'))
+    safe_roots = [os.path.normpath(QUICKFORM_UPLOAD_ROOT), os.path.normpath(OPENMENTOR_UPLOAD_ROOT)]
+    if not any(abs_path == r or abs_path.startswith(r + os.sep) for r in safe_roots):
+        return jsonify({'success': False, 'message': '路径不在允许范围内'}), 400
+    if not os.path.exists(abs_path):
+        return jsonify({'success': False, 'message': '文件不存在'}), 404
+    abs_full = os.path.abspath(abs_path)
+    folder = os.path.dirname(abs_full)
+    sysname = _platform.system()
+    try:
+        if sysname == 'Darwin':
+            # macOS: open -R 高亮该文件
+            _sp.Popen(['open', '-R', abs_full])
+        elif sysname == 'Windows':
+            # Windows: explorer /select 高亮该文件
+            _sp.Popen(['explorer', f'/select,{abs_full}'])
+        elif sysname == 'Linux':
+            # Linux: xdg-open 打开父目录（多数桌面无文件高亮 API）
+            _sp.Popen(['xdg-open', folder])
+        else:
+            return jsonify({'success': False, 'message': f'不支持的系统：{sysname}'}), 500
+        logger.info(f'[reveal] {current_user.username} from {request.remote_addr} → {abs_full}')
+        return jsonify({
+            'success': True,
+            'message': '已在服务器本机弹出文件夹（如果你不是从服务器本机访问，可能在那台机器上弹出）',
+            'folder': folder,
+        })
+    except FileNotFoundError as e:
+        return jsonify({'success': False, 'message': f'系统命令未找到：{e}'}), 500
+    except Exception as e:
+        logger.exception('[reveal] 打开文件夹失败')
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+def _is_safe_quickform_attachment(rel_path, task_id_short):
+    """校验某个 url 路径确实属于该 task 的 quickform 附件目录"""
+    abs_rel = os.path.normpath(rel_path.lstrip('/'))
+    if not os.path.exists(abs_rel):
+        return False
+    parts = abs_rel.split(os.sep)
+    root_parts = os.path.normpath(QUICKFORM_UPLOAD_ROOT).split(os.sep)
+    n = len(root_parts)
+    if len(parts) < n + 2 or parts[:n] != root_parts:
+        return False
+    # parts[n] 是日期，parts[n+1] 是 task_id
+    if parts[n + 1] != task_id_short:
+        return False
+    if len(parts[n]) != 10 or parts[n][4] != '-' or parts[n][7] != '-':
+        return False
+    return True
 
 
 def _extract_text_from_document(file_path, ext):
