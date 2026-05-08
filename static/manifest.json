@@ -1,7 +1,7 @@
 {
   "name": "OpenMentor — AI 导师平台",
   "short_name": "OpenMentor",
-  "description": "让每个老师都能拥有自己的开源 AI 导师，学生扫码即可对话学习。",
+  "description": "让每位师生都能拥有自己的开源 AI 导师，学生扫码即可对话学习。",
   "lang": "zh-CN",
   "dir": "ltr",
   "start_url": "/",

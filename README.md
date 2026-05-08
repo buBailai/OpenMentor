@@ -1,7 +1,7 @@
 # OpenMentor
 
 <p align="center">
-  <strong>🤖 让每个老师都有自己的开源 AI 导师</strong><br>
+  <strong>🤖 让每位师生都有自己的开源 AI 导师</strong><br>
   <em>5 分钟搭出 AI 助教，无需懂 Coze、无需部署 Dify、无需服务器，全部本地化。</em>
 </p>
 
