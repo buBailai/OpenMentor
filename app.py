@@ -3166,6 +3166,48 @@ def _generate_report_via_ai(meta_prompt, ai_config):
     return text.strip(), None
 
 
+def _stream_report_sse(meta_prompt, ai_config, meta_event_payload, persist_factory):
+    """B19 报告流式输出 generator。
+    yield SSE 字符串：event: meta / event: delta / event: done / event: error。
+    persist_factory(full_text) → 返回包含 report_id 的 dict（成功后调用，写库）。
+    """
+    # 立刻发一个 meta 事件，让前端立即关掉 spinner 显示骨架
+    yield _sse_event('meta', meta_event_payload)
+
+    # 找出当前选中的模型
+    model_key = (ai_config.selected_model or '').strip() if ai_config else ''
+    model_cfg = None
+    if ai_config:
+        model_cfg = next((mc for mc in ai_config.model_configs if mc.model_name == model_key), None)
+
+    full_chunks = []
+    try:
+        for chunk in _stream_assistant_response(
+            model_key, model_cfg,
+            [{'role': 'user', 'content': meta_prompt}]
+        ):
+            if chunk:
+                full_chunks.append(chunk)
+                yield _sse_event('delta', {'content': chunk})
+    except Exception as e:
+        logger.exception('流式生成报告失败')
+        yield _sse_event('error', {'message': str(e)})
+        return
+
+    full_text = (''.join(full_chunks)).strip()
+    if not full_text:
+        yield _sse_event('error', {'message': 'AI 返回空内容'})
+        return
+
+    # 持久化
+    try:
+        rec_payload = persist_factory(full_text)
+        yield _sse_event('done', rec_payload)
+    except Exception as e:
+        logger.exception('保存报告失败')
+        yield _sse_event('error', {'message': '保存失败：' + str(e)})
+
+
 @app.route('/assistant/<int:assistant_id>/audit/student_report', methods=['POST'])
 @login_required
 def assistant_student_report(assistant_id):
@@ -3247,6 +3289,50 @@ def assistant_student_report(assistant_id):
         cur_cfg = next((mc for mc in ai_config.model_configs if mc.model_name == ai_config.selected_model), None)
         if (not cur_cfg or not (cur_cfg.api_key or '').strip()) and ai_config.selected_model != 'ollama':
             return jsonify({'code': 500, 'message': f'当前选中的 {ai_config.selected_model} 未配置 API Key'}), 500
+
+        # B19: 流式模式
+        if (request.form.get('stream') or request.args.get('stream') or '').strip() == '1':
+            from flask import stream_with_context
+            assistant_title = assistant.title
+            model_used = ai_config.selected_model
+            uid = current_user.id
+            aid = assistant.id
+
+            def _persist_student(full_text):
+                _db = SessionLocal()
+                try:
+                    rec = StudentReport(
+                        user_id=uid, assistant_id=aid, report_type='student',
+                        student_class=student_class, student_name=student_name,
+                        scope_label=f'{student_class} · {student_name}',
+                        content=full_text, model_used=model_used,
+                        student_count=1, message_count=total_msgs, omitted=omitted,
+                    )
+                    _db.add(rec); _db.commit(); _db.refresh(rec)
+                    return {
+                        'success': True, 'report_id': rec.id,
+                        'session_count': len(convs), 'message_count': total_msgs,
+                        'omitted_blocks': omitted, 'model_used': model_used,
+                        'student_class': student_class, 'student_name': student_name,
+                        'assistant_title': assistant_title,
+                        'created_at': rec.created_at.strftime('%Y-%m-%d %H:%M'),
+                    }
+                finally:
+                    _db.close()
+
+            meta_payload = {
+                'session_count': len(convs), 'message_count': total_msgs,
+                'omitted_blocks': omitted, 'model_used': model_used,
+                'student_class': student_class, 'student_name': student_name,
+                'assistant_title': assistant_title,
+                'scope_label': f'{student_class} · {student_name}',
+            }
+
+            return Response(
+                stream_with_context(_stream_report_sse(meta_prompt, ai_config, meta_payload, _persist_student)),
+                mimetype='text/event-stream',
+                headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
+            )
 
         report, err = _generate_report_via_ai(meta_prompt, ai_config)
         if err:
@@ -3381,6 +3467,50 @@ def assistant_class_report(assistant_id):
         cur_cfg = next((mc for mc in ai_config.model_configs if mc.model_name == ai_config.selected_model), None)
         if (not cur_cfg or not (cur_cfg.api_key or '').strip()) and ai_config.selected_model != 'ollama':
             return jsonify({'code': 500, 'message': f'当前选中的 {ai_config.selected_model} 未配置 API Key'}), 500
+
+        # B19: 流式模式
+        if (request.form.get('stream') or request.args.get('stream') or '').strip() == '1':
+            from flask import stream_with_context
+            assistant_title = assistant.title
+            model_used = ai_config.selected_model
+            uid = current_user.id
+            aid = assistant.id
+
+            def _persist_class(full_text):
+                _db = SessionLocal()
+                try:
+                    rec = StudentReport(
+                        user_id=uid, assistant_id=aid, report_type='class',
+                        student_class=class_filter or None, student_name=None,
+                        scope_label=(f'班级「{class_filter}」' if class_filter else '全部学生'),
+                        content=full_text, model_used=model_used,
+                        student_count=student_count, message_count=total_msgs, omitted=omitted,
+                    )
+                    _db.add(rec); _db.commit(); _db.refresh(rec)
+                    return {
+                        'success': True, 'report_id': rec.id,
+                        'student_count': student_count, 'message_count': total_msgs,
+                        'omitted_students': omitted, 'model_used': model_used,
+                        'class_filter': class_filter,
+                        'assistant_title': assistant_title,
+                        'scope_label': (f'班级「{class_filter}」' if class_filter else '全部学生'),
+                        'created_at': rec.created_at.strftime('%Y-%m-%d %H:%M'),
+                    }
+                finally:
+                    _db.close()
+
+            meta_payload = {
+                'student_count': student_count, 'message_count': total_msgs,
+                'omitted_students': omitted, 'model_used': model_used,
+                'class_filter': class_filter,
+                'assistant_title': assistant_title,
+                'scope_label': (f'班级「{class_filter}」' if class_filter else '全部学生'),
+            }
+            return Response(
+                stream_with_context(_stream_report_sse(meta_prompt, ai_config, meta_payload, _persist_class)),
+                mimetype='text/event-stream',
+                headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
+            )
 
         report, err = _generate_report_via_ai(meta_prompt, ai_config)
         if err:

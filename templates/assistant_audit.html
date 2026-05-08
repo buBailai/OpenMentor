@@ -340,13 +340,12 @@
         renderTable();
     });
 
-    // B13: 生成全班 AI 学情报告（按当前班级筛选范围）
+    // B13 + B19: 生成全班 AI 学情报告（流式）
     document.getElementById('btn-class-report').addEventListener('click', function () {
         var btn = this;
         var origLabel = btn.innerHTML;
         var classFilter = document.getElementById('filter-class').value || '';
         var scopeLabel = classFilter ? `班级「${classFilter}」` : '全部学生';
-        // 用 allStudents 估算样本量并提示
         var inScope = applyFilters(allStudents, {q: '', cls: classFilter, status: ''});
         var stuCount = inScope.length;
         var msgCount = inScope.reduce((s, x) => s + (x.msg_count || 0), 0);
@@ -357,21 +356,155 @@
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>AI 生成中...';
         var fd = new FormData();
         if (classFilter) fd.append('class_name', classFilter);
-        fetch(`/assistant/${ASSISTANT_ID}/audit/class_report`, {method: 'POST', body: fd})
-            .then(r => r.json())
-            .then(function (d) {
-                btn.disabled = false;
-                btn.innerHTML = origLabel;
-                if (!d.success) { alert(d.message || '生成失败'); return; }
-                showReportModal({
-                    title: `${d.assistant_title} · ${d.class_filter || '全部学生'} · 学情报告`,
-                    subtitle: `${d.student_count} 名学生 · ${d.message_count} 条消息${d.omitted_students ? ' · 已截断 ' + d.omitted_students + ' 名学生' : ''} · 由 ${d.model_used} 生成`,
-                    markdown: d.report,
-                    filename: `${d.assistant_title}_${d.class_filter || '全部'}_学情报告_${new Date().toISOString().slice(0,10)}.md`,
-                });
-            })
-            .catch(e => { btn.disabled = false; btn.innerHTML = origLabel; alert('网络异常：' + e); });
+        fd.append('stream', '1');
+
+        streamReport(`/assistant/${ASSISTANT_ID}/audit/class_report`, fd, {
+            scope: 'class',
+            buildTitle: (m) => `${m.assistant_title} · ${m.scope_label || (classFilter || '全部学生')} · 学情报告`,
+            buildSubtitle: (m) => `${m.student_count || 0} 名学生 · ${m.message_count || 0} 条消息${m.omitted_students ? ' · 已截断 ' + m.omitted_students + ' 名学生' : ''} · 由 ${m.model_used || ''} 流式生成中...`,
+            buildFilename: (m) => `${m.assistant_title}_${classFilter || '全部'}_学情报告_${new Date().toISOString().slice(0,10)}.md`,
+        }).finally(() => { btn.disabled = false; btn.innerHTML = origLabel; });
     });
+
+    // B19: 流式报告读取器（共用）
+    async function streamReport(url, formData, opts) {
+        var modalEl, bodyEl, subEl, modalRefs = null;
+        var fullText = '';
+        var meta = null;
+        var done = false;
+        try {
+            var resp = await fetch(url, {method: 'POST', body: formData});
+            if (!resp.ok || !resp.body) {
+                // 服务端拒绝（如 400 / 500）→ 尝试读 JSON 错误
+                var errText = '';
+                try { var j = await resp.json(); errText = j.message || ('HTTP ' + resp.status); }
+                catch { errText = 'HTTP ' + resp.status; }
+                alert('生成失败：' + errText);
+                return;
+            }
+
+            var reader = resp.body.getReader();
+            var decoder = new TextDecoder('utf-8');
+            var buf = '';
+            while (!done) {
+                var { value, done: streamDone } = await reader.read();
+                if (streamDone) break;
+                buf += decoder.decode(value, {stream: true});
+                // 按 SSE 事件分隔（双换行）
+                while (true) {
+                    var i = buf.indexOf('\n\n');
+                    if (i < 0) break;
+                    var raw = buf.slice(0, i);
+                    buf = buf.slice(i + 2);
+                    handleSseEvent(raw);
+                }
+            }
+        } catch (e) {
+            if (modalRefs) modalRefs.error('网络异常：' + (e.message || e));
+            else alert('网络异常：' + (e.message || e));
+        }
+
+        function handleSseEvent(raw) {
+            var lines = raw.split('\n');
+            var event = 'message';
+            var dataStr = '';
+            for (var L of lines) {
+                if (L.startsWith('event: ')) event = L.slice(7).trim();
+                else if (L.startsWith('data: ')) dataStr += L.slice(6);
+            }
+            if (!dataStr) return;
+            var payload = null;
+            try { payload = JSON.parse(dataStr); } catch { return; }
+
+            if (event === 'meta') {
+                meta = payload;
+                modalRefs = openStreamingReportModal({
+                    title: opts.buildTitle(meta),
+                    subtitle: opts.buildSubtitle(meta),
+                });
+            } else if (event === 'delta' && payload.content) {
+                fullText += payload.content;
+                if (modalRefs) modalRefs.updateContent(fullText);
+            } else if (event === 'done') {
+                done = true;
+                meta = Object.assign({}, meta || {}, payload);
+                if (modalRefs) {
+                    modalRefs.subtitle(`${meta.student_count != null ? meta.student_count + (opts.scope === 'class' ? ' 名学生' : ' 名学生') : ''}${meta.session_count != null ? ' · ' + meta.session_count + ' 个会话' : ''}${meta.message_count != null ? ' · ' + meta.message_count + ' 条消息' : ''} · 由 ${meta.model_used || ''} 生成 · ${meta.created_at || ''}`);
+                    modalRefs.finalize(fullText, opts.buildFilename(meta));
+                }
+            } else if (event === 'error') {
+                done = true;
+                if (modalRefs) modalRefs.error(payload.message || '生成失败');
+                else alert('生成失败：' + (payload.message || '未知错误'));
+            }
+        }
+    }
+
+    function openStreamingReportModal(opts) {
+        var existing = document.getElementById('om-report-modal');
+        if (existing) existing.remove();
+        var wrap = document.createElement('div');
+        wrap.id = 'om-report-modal';
+        wrap.style.cssText = 'position:fixed;inset:0;background:rgba(20,17,12,0.55);z-index:1000;display:flex;align-items:center;justify-content:center;padding:1rem;';
+        wrap.innerHTML = `
+            <div style="background:var(--om-paper);border-radius:14px;max-width:780px;width:100%;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--om-border);">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:1rem 1.25rem;border-bottom:1px solid var(--om-border);gap:1rem;">
+                    <div style="min-width:0;flex:1;">
+                        <h4 id="om-report-title" style="margin:0;color:var(--om-ink);font-weight:600;font-size:1.05rem;"></h4>
+                        <p id="om-report-sub" style="margin:0.25rem 0 0;color:var(--om-muted);font-size:0.82rem;"></p>
+                    </div>
+                    <button type="button" id="om-report-close" style="background:transparent;border:none;font-size:1.4rem;color:var(--om-muted);cursor:pointer;padding:0 0.4rem;line-height:1;">×</button>
+                </div>
+                <div id="om-report-body" style="padding:1rem 1.25rem;overflow-y:auto;flex:1;line-height:1.7;color:var(--om-ink);"><div style="color:var(--om-muted);"><span class="spinner-border spinner-border-sm me-2"></span>AI 正在写报告...</div></div>
+                <div id="om-report-footer" style="padding:0.75rem 1.25rem;border-top:1px solid var(--om-border);display:flex;gap:0.5rem;justify-content:flex-end;">
+                    <span class="text-muted small" id="om-report-streaming">流式生成中...</span>
+                </div>
+            </div>`;
+        document.body.appendChild(wrap);
+        var titleEl = document.getElementById('om-report-title');
+        var subEl = document.getElementById('om-report-sub');
+        var bodyEl = document.getElementById('om-report-body');
+        var footerEl = document.getElementById('om-report-footer');
+        titleEl.textContent = opts.title;
+        subEl.textContent = opts.subtitle;
+        document.getElementById('om-report-close').onclick = () => wrap.remove();
+        wrap.addEventListener('click', e => { if (e.target === wrap) wrap.remove(); });
+
+        return {
+            updateContent(md) {
+                bodyEl.innerHTML = (window.marked && window.marked.parse) ? window.marked.parse(md) : ('<pre style="white-space:pre-wrap;">' + escapeHtml(md) + '</pre>');
+                bodyEl.scrollTop = bodyEl.scrollHeight;
+            },
+            subtitle(t) { subEl.textContent = t; },
+            finalize(md, filename) {
+                bodyEl.innerHTML = (window.marked && window.marked.parse) ? window.marked.parse(md) : ('<pre style="white-space:pre-wrap;">' + escapeHtml(md) + '</pre>');
+                footerEl.innerHTML = '';
+                var copyBtn = document.createElement('button');
+                copyBtn.type = 'button'; copyBtn.className = 'btn btn-secondary btn-sm';
+                copyBtn.textContent = '复制 Markdown';
+                copyBtn.onclick = function() {
+                    try { navigator.clipboard.writeText(md); copyBtn.textContent = '已复制 ✓'; setTimeout(() => copyBtn.textContent = '复制 Markdown', 1500); }
+                    catch { alert('请手动选中复制'); }
+                };
+                var dlBtn = document.createElement('button');
+                dlBtn.type = 'button'; dlBtn.className = 'btn btn-primary btn-sm';
+                dlBtn.textContent = '下载 .md';
+                dlBtn.onclick = function() {
+                    var blob = new Blob([md], {type: 'text/markdown;charset=utf-8'});
+                    var a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob); a.download = filename;
+                    document.body.appendChild(a); a.click();
+                    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(a.href); }, 100);
+                };
+                footerEl.appendChild(copyBtn);
+                footerEl.appendChild(dlBtn);
+            },
+            error(msg) {
+                bodyEl.innerHTML = '<div style="color:var(--om-danger);background:var(--om-danger-soft);padding:0.7rem 1rem;border-radius:6px;"><i class="bi bi-exclamation-triangle"></i> ' + escapeHtml(msg) + '</div>';
+                footerEl.innerHTML = '<button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById(\'om-report-modal\').remove()">关闭</button>';
+            },
+        };
+    }
 
     // B14: 报告历史列表弹窗
     document.getElementById('btn-report-history').addEventListener('click', function () {

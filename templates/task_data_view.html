@@ -144,6 +144,10 @@ function openAttachmentsModal(attachments, submissionId) {
             preview = '<video src="' + url + '" controls style="width:100%;max-height:380px;border-radius:6px;border:1px solid #E5E0D8;background:#000;"></video>';
         } else if (/^(mp3|wav|m4a|aac|ogg)$/.test(ext)) {
             preview = '<audio src="' + url + '" controls style="width:100%;"></audio>';
+        } else if (ext === 'docx') {
+            preview = '<div class="om-preview-pending" data-preview-type="docx" data-preview-url="' + url + '" style="background:#fff;border:1px solid #E5E0D8;border-radius:6px;padding:0.8rem 1rem;color:#6B6760;font-size:0.9rem;min-height:120px;">正在加载 docx 预览...</div>';
+        } else if (ext === 'xlsx' || ext === 'xls') {
+            preview = '<div class="om-preview-pending" data-preview-type="xlsx" data-preview-url="' + url + '" style="background:#fff;border:1px solid #E5E0D8;border-radius:6px;padding:0.8rem 1rem;color:#6B6760;font-size:0.9rem;min-height:120px;">正在加载表格预览...</div>';
         } else if (/^(txt|md|markdown|csv|tsv|json|yaml|yml|xml|html|htm|log)$/.test(ext)) {
             preview = '<iframe src="' + url + '" style="width:100%;height:340px;border:1px solid #E5E0D8;border-radius:6px;background:#fff;"></iframe>';
         } else {
@@ -160,6 +164,139 @@ function openAttachmentsModal(attachments, submissionId) {
     }).join('');
 
     modal.style.display = 'flex';
+    // 启动 docx / xlsx 懒加载预览
+    setTimeout(processPendingPreviews, 0);
+}
+
+// ============ docx / xlsx 浏览器端预览 ============
+const OM_LIB_LOADERS = {
+    docx: null,   // Promise，加载 jszip + docx-preview
+    xlsx: null,   // Promise，加载 sheetjs
+};
+function loadScript(src) {
+    return new Promise(function(resolve, reject) {
+        var s = document.createElement('script');
+        s.src = src; s.async = true;
+        s.onload = function() { resolve(); };
+        s.onerror = function() { reject(new Error('加载脚本失败：' + src)); };
+        document.head.appendChild(s);
+    });
+}
+function ensureDocxLib() {
+    if (!OM_LIB_LOADERS.docx) {
+        OM_LIB_LOADERS.docx = loadScript('/static/vendor/docx-preview/jszip.min.js')
+            .then(function() { return loadScript('/static/vendor/docx-preview/docx-preview.min.js'); });
+    }
+    return OM_LIB_LOADERS.docx;
+}
+function ensureXlsxLib() {
+    if (!OM_LIB_LOADERS.xlsx) {
+        OM_LIB_LOADERS.xlsx = loadScript('/static/vendor/sheetjs/xlsx.mini.min.js');
+    }
+    return OM_LIB_LOADERS.xlsx;
+}
+
+function processPendingPreviews() {
+    var nodes = document.querySelectorAll('.om-preview-pending');
+    nodes.forEach(function(node) {
+        var type = node.getAttribute('data-preview-type');
+        var url = node.getAttribute('data-preview-url');
+        if (!type || !url) return;
+        node.classList.remove('om-preview-pending');  // 防重复处理
+        if (type === 'docx') renderDocxInto(node, url);
+        else if (type === 'xlsx') renderXlsxInto(node, url);
+    });
+}
+
+function _previewError(node, msg) {
+    node.style.color = '#B8463E';
+    node.style.background = '#F2DCD9';
+    node.innerHTML = '<i class="bi bi-exclamation-triangle"></i> 预览失败：' + msg + '（请用下方「下载」按钮）';
+}
+
+async function renderDocxInto(node, url) {
+    try {
+        await ensureDocxLib();
+        var resp = await fetch(url);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        var blob = await resp.blob();
+        node.textContent = '';
+        node.style.background = '#fff';
+        node.style.color = '#141413';
+        node.style.padding = '0';
+        node.style.minHeight = '0';
+        node.style.maxHeight = '520px';
+        node.style.overflow = 'auto';
+        // docx-preview 默认会注入完整 Word 排版
+        await window.docx.renderAsync(blob, node, null, {
+            className: 'om-docx',
+            inWrapper: true,
+            ignoreWidth: false,
+            ignoreHeight: false,
+            useBase64URL: true,
+        });
+    } catch (e) {
+        _previewError(node, e.message || String(e));
+    }
+}
+
+async function renderXlsxInto(node, url) {
+    try {
+        await ensureXlsxLib();
+        var resp = await fetch(url);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        var ab = await resp.arrayBuffer();
+        var wb = window.XLSX.read(ab, {type: 'array'});
+        var sheetNames = wb.SheetNames || [];
+        if (!sheetNames.length) throw new Error('工作簿为空');
+        // 渲染第一个 sheet，并加 sheet 切换 tab
+        node.style.background = '#fff';
+        node.style.color = '#141413';
+        node.style.padding = '0';
+        node.style.minHeight = '0';
+        node.style.maxHeight = '520px';
+        node.style.overflow = 'auto';
+        var tabsHtml = '<div class="om-xlsx-tabs" style="display:flex;gap:0.3rem;flex-wrap:wrap;padding:0.4rem 0.6rem;background:#F7F4EC;border-bottom:1px solid #E5E0D8;position:sticky;top:0;z-index:1;">' +
+            sheetNames.map(function(n, i) {
+                return '<button type="button" data-sheet="' + i + '" class="om-xlsx-tab" style="background:' + (i===0?'#141413':'#fff') + ';color:' + (i===0?'#F7F4EC':'#141413') + ';border:1px solid #C9C3B8;border-radius:4px;padding:0.2rem 0.55rem;font-size:0.78rem;cursor:pointer;">' + escHtmlSimple(n) + '</button>';
+            }).join('') + '</div>';
+        var bodyDiv = '<div class="om-xlsx-body" style="padding:0.5rem;"></div>';
+        node.innerHTML = tabsHtml + bodyDiv;
+
+        function showSheet(idx) {
+            var sheet = wb.Sheets[sheetNames[idx]];
+            var html = window.XLSX.utils.sheet_to_html(sheet, {editable: false});
+            // 把 SheetJS 默认表格美化一下
+            html = html.replace('<table', '<table class="om-xlsx-table" style="border-collapse:collapse;font-size:0.85rem;width:max-content;min-width:100%;"');
+            var bodyEl = node.querySelector('.om-xlsx-body');
+            bodyEl.innerHTML = html;
+            // 给所有 td/th 套上边框样式
+            bodyEl.querySelectorAll('td, th').forEach(function(c) {
+                c.style.border = '1px solid #E5E0D8';
+                c.style.padding = '0.25rem 0.5rem';
+                c.style.background = c.tagName === 'TH' ? '#F7F4EC' : '#fff';
+                c.style.whiteSpace = 'nowrap';
+            });
+            // tabs active
+            node.querySelectorAll('.om-xlsx-tab').forEach(function(b) {
+                var active = parseInt(b.getAttribute('data-sheet'), 10) === idx;
+                b.style.background = active ? '#141413' : '#fff';
+                b.style.color = active ? '#F7F4EC' : '#141413';
+            });
+        }
+        showSheet(0);
+        node.querySelectorAll('.om-xlsx-tab').forEach(function(b) {
+            b.addEventListener('click', function() {
+                showSheet(parseInt(this.getAttribute('data-sheet'), 10));
+            });
+        });
+    } catch (e) {
+        _previewError(node, e.message || String(e));
+    }
+}
+
+function escHtmlSimple(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]);});
 }
 
 function closeAttachmentsModal() {

@@ -69,6 +69,15 @@
                                     <option value="siliconflow" {% if ai_config and ai_config.selected_model == 'siliconflow' %}selected{% endif %}>硅基流动</option>
                                     <option value="ollama" {% if ai_config and ai_config.selected_model == 'ollama' %}selected{% endif %}>Ollama (本地)</option>
                                 </select>
+                                <div class="mt-2" id="apply-key-row">
+                                    <a id="apply-key-btn" href="#" target="_blank" rel="noopener"
+                                       class="btn btn-sm btn-outline-primary"
+                                       style="border-radius: 6px; padding: 0.4rem 0.85rem; font-weight: 500; display: inline-flex; align-items: center; gap: 0.35rem;">
+                                        <i class="bi bi-box-arrow-up-right"></i>
+                                        <span id="apply-key-btn-text">申请 API Key</span>
+                                    </a>
+                                    <small class="text-muted ms-2" id="apply-key-hint" style="font-size: 0.8rem;"></small>
+                                </div>
                             </div>
                             
                             <div id="deepseek_config" class="model-config">
@@ -319,6 +328,27 @@
         }
     });
 
+    // 各模型的 API Key 申请页面
+    const APPLY_KEY_LINKS = {
+        'deepseek':    {url: 'https://platform.deepseek.com',           label: '前往 DeepSeek 平台申请',      hint: 'platform.deepseek.com'},
+        'doubao':      {url: 'https://www.volcengine.com/product/ark', label: '前往火山方舟申请',           hint: 'volcengine.com（字节跳动）'},
+        'qwen':        {url: 'https://bailian.console.aliyun.com',     label: '前往阿里云百炼申请',         hint: 'bailian.console.aliyun.com'},
+        'glm':         {url: 'https://open.bigmodel.cn',                label: '前往智谱开放平台申请',       hint: 'open.bigmodel.cn（部分模型免费）'},
+        'siliconflow': {url: 'https://siliconflow.cn',                  label: '前往硅基流动申请',           hint: 'siliconflow.cn'},
+        'ollama':      {url: 'https://ollama.com/download',             label: '前往 Ollama 下载',           hint: '本地部署，无需 API Key'},
+    };
+
+    function updateApplyKeyButton(model) {
+        const cfg = APPLY_KEY_LINKS[model];
+        const btn = document.getElementById('apply-key-btn');
+        const txt = document.getElementById('apply-key-btn-text');
+        const hint = document.getElementById('apply-key-hint');
+        if (!cfg) return;
+        btn.href = cfg.url;
+        txt.textContent = cfg.label;
+        hint.textContent = cfg.hint;
+    }
+
     // 根据选择的模型显示对应的配置项
     document.getElementById('selected_model').addEventListener('change', function() {
         const model = this.value;
@@ -328,6 +358,7 @@
         document.getElementById('glm_config').style.display = model === 'glm' ? 'block' : 'none';
         document.getElementById('siliconflow_config').style.display = model === 'siliconflow' ? 'block' : 'none';
         document.getElementById('ollama_config').style.display = model === 'ollama' ? 'block' : 'none';
+        updateApplyKeyButton(model);
     });
 
     // 初始化显示
@@ -338,6 +369,7 @@
     document.getElementById('glm_config').style.display = selectedModel === 'glm' ? 'block' : 'none';
     document.getElementById('siliconflow_config').style.display = selectedModel === 'siliconflow' ? 'block' : 'none';
     document.getElementById('ollama_config').style.display = selectedModel === 'ollama' ? 'block' : 'none';
+    updateApplyKeyButton(selectedModel);
     
     // API密钥测试功能
     document.querySelectorAll('.test-api-key').forEach(button => {

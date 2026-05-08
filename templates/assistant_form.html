@@ -144,11 +144,31 @@
                                 <div class="form-text text-muted">你可以直接修改后采用。</div>
                             </div>
 
-                            <div style="display:flex; gap:0.5rem; justify-content:flex-end; margin-top:1rem; flex-wrap:wrap;">
-                                <button type="button" id="prompt-cancel" class="btn btn-secondary" style="background:#6B6760; border:none;">取消</button>
-                                <button type="button" id="prompt-regen" class="btn btn-outline-primary" style="display:none;"><i class="bi bi-arrow-clockwise"></i> 重新生成</button>
-                                <button type="button" id="prompt-apply" class="btn btn-success" style="display:none; background:#5B7553; border:none; font-weight:600;"><i class="bi bi-check-lg"></i> 采用到主表单</button>
-                                <button type="button" id="prompt-submit" class="btn btn-primary" style="background: #D97757; border:none; font-weight:600;"><i class="bi bi-magic"></i> 生成草稿</button>
+                            <div style="display:flex; gap:0.5rem; justify-content:space-between; align-items:center; margin-top:1rem; flex-wrap:wrap;">
+                                <button type="button" id="prompt-history" class="btn btn-outline-secondary" style="font-weight:500;"><i class="bi bi-archive"></i> 历史草稿</button>
+                                <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                                    <button type="button" id="prompt-cancel" class="btn btn-secondary" style="background:#6B6760; border:none;">取消</button>
+                                    <button type="button" id="prompt-regen" class="btn btn-outline-primary" style="display:none;"><i class="bi bi-arrow-clockwise"></i> 重新生成</button>
+                                    <button type="button" id="prompt-apply" class="btn btn-success" style="display:none; background:#5B7553; border:none; font-weight:600;"><i class="bi bi-check-lg"></i> 采用到主表单</button>
+                                    <button type="button" id="prompt-submit" class="btn btn-primary" style="background: #D97757; border:none; font-weight:600;"><i class="bi bi-magic"></i> 生成草稿</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- B18 历史草稿列表弹窗 -->
+                    <div id="prompt-history-modal" style="display:none; position:fixed; inset:0; background:rgba(20,17,12,0.55); z-index:1100; align-items:center; justify-content:center; padding:1rem;">
+                        <div style="background:#fff; border-radius:14px; max-width:680px; width:100%; max-height:88vh; display:flex; flex-direction:column; overflow:hidden; border:1px solid #E5E0D8;">
+                            <div style="display:flex; justify-content:space-between; align-items:flex-start; padding:1rem 1.25rem; border-bottom:1px solid #E5E0D8; background:#F7F4EC;">
+                                <div>
+                                    <h5 style="margin:0; color:#141413; font-weight:600;"><i class="bi bi-archive"></i> 历史草稿</h5>
+                                    <p style="margin:0.2rem 0 0; color:#6B6760; font-size:0.82rem;" id="prompt-history-sub">最近 10 条本浏览器生成的提示词（仅本机可见）</p>
+                                </div>
+                                <button type="button" id="prompt-history-close" style="background:transparent; border:none; font-size:1.4rem; color:#6B6760; cursor:pointer; padding:0 0.4rem; line-height:1;">×</button>
+                            </div>
+                            <div id="prompt-history-list" style="padding:0.5rem 0; overflow-y:auto; flex:1;"></div>
+                            <div style="padding:0.6rem 1.25rem; border-top:1px solid #E5E0D8; text-align:right;">
+                                <button type="button" id="prompt-history-clear" class="btn btn-link btn-sm text-danger" style="text-decoration:none;">清空历史</button>
                             </div>
                         </div>
                     </div>
@@ -373,11 +393,132 @@
             btnRegen.style.display = 'inline-block';
             btnApply.style.display = 'inline-block';
             btnRegen.disabled = false;
+            // B18 保存到历史
+            saveDraftToHistory({
+                ts: Date.now(),
+                role, audience, dos, donts, tone,
+                fileCount: files ? files.length : 0,
+                generated_prompt: data.generated_prompt || '',
+                model_used: data.model_used || '',
+                material_count: data.material_count || 0,
+            });
         } catch (e) {
             showErr('网络异常：' + e.message);
             btnSubmit.disabled = false;
             btnSubmit.innerHTML = '<i class="bi bi-arrow-clockwise"></i> 重试';
         }
+    }
+
+    // ============ B18 提示词草稿历史（localStorage 最多 10 条）============
+    const HISTORY_KEY = 'om-prompt-drafts';
+    const HISTORY_MAX = 10;
+
+    function loadDraftHistory() {
+        try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); }
+        catch { return []; }
+    }
+    function saveDraftToHistory(entry) {
+        try {
+            var arr = loadDraftHistory();
+            arr.unshift(entry);
+            if (arr.length > HISTORY_MAX) arr = arr.slice(0, HISTORY_MAX);
+            localStorage.setItem(HISTORY_KEY, JSON.stringify(arr));
+        } catch (e) { /* localStorage 可能被禁，忽略 */ }
+    }
+    function fmtTime(ts) {
+        var d = new Date(ts);
+        var pad = function(n) { return n < 10 ? '0' + n : n; };
+        return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    }
+    function _esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]);});
+    }
+
+    var historyModal = $('prompt-history-modal');
+    var historyList = $('prompt-history-list');
+    var historySub = $('prompt-history-sub');
+    var btnHistory = $('prompt-history');
+    var btnHistoryClose = $('prompt-history-close');
+    var btnHistoryClear = $('prompt-history-clear');
+
+    function renderHistoryList() {
+        var arr = loadDraftHistory();
+        historySub.textContent = arr.length === 0
+            ? '尚无历史草稿'
+            : `共 ${arr.length} 条历史草稿（最多保留 10 条 · 仅本浏览器可见）`;
+        if (!arr.length) {
+            historyList.innerHTML = '<div style="padding:2rem;text-align:center;color:#94918B;">点击「生成草稿」创建第一条</div>';
+            return;
+        }
+        historyList.innerHTML = arr.map(function(e, i) {
+            var snippet = (e.generated_prompt || '').slice(0, 80);
+            var inputs = [e.role, e.audience].filter(Boolean).join(' · ');
+            return `
+            <div style="padding:0.7rem 1.25rem; border-bottom:1px solid #E5E0D8;">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.6rem;">
+                    <div style="min-width:0; flex:1;">
+                        <div style="font-weight:600; color:#141413; font-size:0.92rem;">
+                            ${_esc(inputs || '（未填角色/受众）')}
+                            ${e.fileCount ? `<span style="font-weight:400;color:#94918B;font-size:0.78rem;margin-left:0.4rem;">+${e.fileCount} 份素材</span>` : ''}
+                        </div>
+                        <div style="color:#6B6760; font-size:0.78rem; margin-top:0.2rem;">
+                            ${_esc(fmtTime(e.ts))} · ${_esc(e.model_used || '')} · ${(e.generated_prompt || '').length} 字
+                        </div>
+                        <div style="color:#6B6760; font-size:0.82rem; margin-top:0.3rem; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                            ${_esc(snippet)}${(e.generated_prompt || '').length > 80 ? '...' : ''}
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:0.3rem;flex-shrink:0;">
+                        <button type="button" class="btn btn-sm btn-outline-primary" data-action="restore" data-idx="${i}">恢复</button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" data-action="delete" data-idx="${i}">删除</button>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    function openHistoryModal() {
+        renderHistoryList();
+        historyModal.style.display = 'flex';
+    }
+    function closeHistoryModal() { historyModal.style.display = 'none'; }
+
+    if (btnHistory) {
+        btnHistory.addEventListener('click', openHistoryModal);
+        btnHistoryClose.addEventListener('click', closeHistoryModal);
+        historyModal.addEventListener('click', function(e) { if (e.target === historyModal) closeHistoryModal(); });
+        btnHistoryClear.addEventListener('click', function() {
+            if (!confirm('确定清空全部历史草稿？此操作不可恢复。')) return;
+            try { localStorage.removeItem(HISTORY_KEY); } catch {}
+            renderHistoryList();
+        });
+        historyList.addEventListener('click', function(e) {
+            var btn = e.target.closest('button[data-action]');
+            if (!btn) return;
+            var action = btn.getAttribute('data-action');
+            var idx = parseInt(btn.getAttribute('data-idx'), 10);
+            var arr = loadDraftHistory();
+            if (action === 'restore') {
+                var entry = arr[idx];
+                if (!entry) return;
+                $('prompt-role').value = entry.role || '';
+                $('prompt-audience').value = entry.audience || '';
+                $('prompt-dos').value = entry.dos || '';
+                $('prompt-donts').value = entry.donts || '';
+                $('prompt-tone').value = entry.tone || '';
+                draftEl.value = entry.generated_prompt || '';
+                draftMeta.textContent = `${(entry.generated_prompt || '').length} 字 · 来自 ${entry.model_used || ''}（历史草稿恢复）`;
+                draftWrap.style.display = 'block';
+                btnSubmit.style.display = 'none';
+                btnRegen.style.display = 'inline-block';
+                btnApply.style.display = 'inline-block';
+                closeHistoryModal();
+            } else if (action === 'delete') {
+                arr.splice(idx, 1);
+                try { localStorage.setItem(HISTORY_KEY, JSON.stringify(arr)); } catch {}
+                renderHistoryList();
+            }
+        });
     }
 
     btnSubmit.addEventListener('click', generateDraft);
