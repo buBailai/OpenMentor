@@ -17,7 +17,7 @@ OpenMentor 是基于 [QuickForm 2.0（纯代码版）](https://github.com/wstlab
 
 | 项目 | OpenMentor |
 | --- | --- |
-| 开发者 | 厦门市演武小学 信息中心 白鹭辉 |
+| 开发者 | 厦门市演武小学 信息中心 |
 | GitHub | <https://github.com/buBailai/OpenMentor> |
 | 协议 | MIT License（沿用 QuickForm 上游协议） |
 

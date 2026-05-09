@@ -158,7 +158,7 @@ OpenMentor 站在 QuickForm 的肩膀上。特别致谢：
 本项目采用 [MIT License](./LICENSE)，沿用 QuickForm 上游协议。
 
 - QuickForm 原版权：Copyright © 2026 xiezuoru / 温州科技高级中学 AI 科创中心 + 温州大学
-- OpenMentor 新增部分版权：Copyright © 2026 厦门市演武小学 信息中心 白鹭辉
+- OpenMentor 新增部分版权：Copyright © 2026 厦门市演武小学 信息中心
 
 详见 [NOTICE.md](./NOTICE.md)。
 
