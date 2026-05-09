@@ -33,11 +33,17 @@ OpenMentor 是基于 [QuickForm 2.0](https://github.com/wstlab/quickform) 二次
 
 ## 🚀 快速开始
 
-### 推荐：让 AI Agent 帮你装（最省心）
+### 推荐 ①：Windows 免安装包（最快 · 双击即用）
 
-如果你不会用终端命令，可以让 AI Agent 全程代劳：
+Windows 用户从 [**📘 OpenMentor 教程文档**](https://scnxnljz0ey0.feishu.cn/docx/I8qxdpNdPo38xJxsaiscMC09n6g)（已上传免安装包和代码包）下载 `OpenMentor_V1.1.3_免安装包.zip`，解压后**直接双击 `OpenMentor启动器.bat`** 即可自动安装依赖并运行项目，无需手动装 Python 或 pip。
 
-1. 从 [Releases](https://github.com/buBailai/OpenMentor/releases) 下载最新 zip 解压到任意目录
+启动后会先弹出「OpenMentor 一键部署安装程序」自动补齐依赖，随后自动打开「OpenMentor 启动器」界面，点「启动服务」即可使用。
+
+### 推荐 ②：让 AI Agent 帮你装（适合纯代码版本 / macOS / Linux）
+
+如果你下载的是纯代码版本，又不熟悉 Python / 终端命令，可以让 AI Agent 全程代劳：
+
+1. 从 [**📘 OpenMentor 教程文档**](https://scnxnljz0ey0.feishu.cn/docx/I8qxdpNdPo38xJxsaiscMC09n6g) 下载最新代码包解压到任意目录
 2. 打开 **Cherry Studio / Trae / Claude Code / OpenClaw** 等支持终端调用的 AI Agent 客户端
 3. 把项目路径告诉 Agent，对它说 **"帮我启动这个项目"**
 4. Agent 会自动检查 Python 环境、创建虚拟环境、安装依赖、启动服务、给你访问 URL

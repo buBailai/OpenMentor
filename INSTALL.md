@@ -2,9 +2,31 @@
 
 > 面向老师的安装指南。即使你不会编程也可以按步骤完成。
 
-## 零、推荐：用 AI Agent 辅助一键部署（最省心）
+## 零、最快：Windows 免安装包（推荐 Windows 用户）
 
-如果你不熟悉 Python / 终端命令，可以让 AI Agent 帮你完成全部安装和启动工作：
+Windows 系统下下载 `OpenMentor_V1.1.3_免安装包.zip`，解压后**直接双击 `OpenMentor启动器.bat`** 即可自动安装依赖并运行项目，无需手动装 Python 或 pip。
+
+![解压后双击 OpenMentor启动器.bat](./docs/images/screenshot-launcher-bat.png)
+
+启动后会先弹出「OpenMentor 一键部署安装程序」自动补齐依赖：
+
+![一键部署安装程序自动补齐依赖](./docs/images/screenshot-installer-progress.png)
+
+随后自动打开「OpenMentor 启动器」界面，点「启动服务」即可使用：
+
+![OpenMentor 启动器主界面](./docs/images/screenshot-launcher-ui.png)
+
+- 本机访问地址：`http://localhost:5001`
+- 局域网访问地址（学生扫码用）：`http://<局域网IP>:5001`
+- 默认账号：`admin / openmentor`
+
+> macOS / Linux 用户请看下方「零·五、用 AI Agent 辅助一键部署」或从「一、准备 Python 环境」开始的完整步骤。
+
+---
+
+## 零·五、推荐：用 AI Agent 辅助一键部署（适合下载纯代码版本）
+
+如果你下载的是**纯代码版本**（`OpenMentor_V1.1.3.zip` 或源码），又不熟悉 Python / 终端命令，可以让 AI Agent 帮你完成全部安装和启动工作：
 
 1. 从 [GitHub Releases](https://github.com/buBailai/OpenMentor/releases) 下载最新版 zip 并解压到任意安装盘下，例如：
    - Windows：`D:\OpenMentor`
@@ -204,9 +226,8 @@ WantedBy=multi-user.target
 
 ## 八、获取帮助
 
-- 项目主页：（待补充 GitHub/Gitee 地址）
+- 项目主页：<https://github.com/buBailai/OpenMentor>
 - 上游项目 QuickForm：<https://gitee.com/wstlab/quickform>
-- 投稿邮箱（QuickForm 项目方）：xiezuoru@vip.qq.com
 
 ---
 
