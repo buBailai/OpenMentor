@@ -127,15 +127,22 @@ OpenMentor/
 ├── INSTALL.md              # 安装手册（面向老师）
 ├── USAGE.md                # 使用手册（面向老师）
 ├── NOTICE.md               # 开源归属声明
+├── LICENSE                 # MIT License
 ├── openmentor.db           # SQLite 数据库（首次启动自动生成）
-├── static/                 # 静态资源（CSS/JS/上传文件）
-│   ├── css/
-│   ├── js/
-│   ├── vendor/             # Bootstrap, qrcodejs, marked.js, highlight.js
-│   └── uploads/            # QuickForm + OpenMentor 上传文件
+├── docs/images/            # 文档插图（README / INSTALL 引用的截图）
+├── static/                 # 静态资源（含 PWA：manifest.json / sw.js / pwa-register.js）
+│   ├── css/                # Bootstrap + 自定义样式
+│   ├── js/                 # Bootstrap bundle
+│   ├── icons/              # PWA 图标（192 / 512 / apple-touch）
+│   ├── reports/            # 生成的 AI 学情报告（运行时产生）
+│   ├── uploads/            # QuickForm + OpenMentor 上传文件
+│   ├── us/                 # 关于页 / 帮助页插图
+│   └── vendor/             # Bootstrap / bootstrap-icons / qrcodejs / marked / highlight.js / ECharts / docx-preview / SheetJS
 └── templates/              # Jinja2 模板
     ├── assistant_*.html    # AI 导师管理 / 详情 / 审计
     ├── chat_*.html         # 学生端聊天
+    ├── analytics.html      # 学情大屏
+    ├── roster.html         # 班级花名册
     ├── dashboard.html      # QuickForm 数据任务（保留）
     └── ...
 ```
