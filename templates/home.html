@@ -2,6 +2,186 @@
 
 {% block title %}首页 - {{ get_app_name() }}{% endblock %}
 
+{% block styles %}
+<style>
+    /* 打卡与意见浮窗 */
+    .om-checkin-modal {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(20, 17, 12, 0.55);
+        z-index: 1100;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+        overflow-y: auto;
+    }
+    .om-checkin-modal.is-open { display: flex; }
+    .om-checkin-dialog {
+        background: var(--om-paper);
+        border: 1px solid var(--om-border);
+        border-radius: var(--om-radius-lg);
+        box-shadow: 0 12px 40px rgba(0,0,0,0.18);
+        max-width: 720px;
+        width: 100%;
+        max-height: 92vh;
+        overflow-y: auto;
+        padding: 1.5rem 1.5rem 1.25rem;
+    }
+    .om-checkin-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 1rem;
+    }
+    .om-checkin-header h3 {
+        margin: 0;
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: var(--om-ink);
+    }
+    .om-checkin-header .subtitle {
+        margin: 0.25rem 0 0;
+        font-size: 0.86rem;
+        color: var(--om-muted);
+    }
+    .om-checkin-close {
+        background: transparent;
+        border: none;
+        font-size: 1.5rem;
+        color: var(--om-muted);
+        cursor: pointer;
+        padding: 0 0.25rem;
+        line-height: 1;
+    }
+    .om-checkin-region { margin-bottom: 0.85rem; }
+    .om-checkin-region:last-of-type { margin-bottom: 0; }
+    .om-checkin-region-title {
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: var(--om-muted);
+        letter-spacing: 0.12em;
+        margin: 0 0 6px;
+        padding-left: 2px;
+    }
+    .om-province-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+        gap: 6px;
+    }
+    .om-province-btn {
+        appearance: none;
+        border: 1.5px solid var(--om-border);
+        background: var(--om-paper);
+        color: var(--om-ink);
+        font-size: 0.9rem;
+        font-family: inherit;
+        padding: 8px 6px;
+        border-radius: var(--om-radius);
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+    .om-province-btn:hover {
+        border-color: var(--om-clay);
+        background: var(--om-clay-soft);
+    }
+    .om-province-btn.selected {
+        background: var(--om-clay);
+        border-color: var(--om-clay);
+        color: #fff;
+        box-shadow: 0 2px 8px rgba(217, 119, 87, 0.32);
+    }
+    .om-province-btn.overseas {
+        grid-column: 1 / -1;
+        max-width: 200px;
+        margin: 0 auto;
+    }
+    .om-checkin-footer {
+        margin-top: 1.25rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--om-divider);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.65rem;
+    }
+    .om-checkin-display {
+        font-size: 0.92rem;
+        color: var(--om-muted);
+        min-height: 1.4em;
+    }
+    .om-checkin-display strong { color: var(--om-clay); font-weight: 600; }
+    .om-checkin-actions {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+    .om-checkin-note {
+        margin: 0;
+        font-size: 0.78rem;
+        color: var(--om-subtle);
+        text-align: center;
+    }
+    .om-checkin-success {
+        text-align: center;
+        padding: 1.5rem 0 0.5rem;
+    }
+    .om-checkin-success .icon { font-size: 2.5rem; margin-bottom: 0.4rem; }
+    .om-checkin-success h4 { margin: 0 0 0.25rem; font-size: 1.15rem; }
+    .om-checkin-success p { margin: 0; color: var(--om-muted); font-size: 0.92rem; }
+    .om-checkin-success p strong { color: var(--om-clay); }
+
+    /* 实时打卡热力图 */
+    .om-checkin-stats {
+        margin-bottom: 1rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid var(--om-divider);
+    }
+    .om-checkin-stats-line {
+        font-size: 0.92rem;
+        color: var(--om-muted);
+        text-align: center;
+        margin: 0 0 0.65rem;
+    }
+    .om-checkin-stats-line strong {
+        color: var(--om-clay);
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+    }
+    .om-heatmap-wrap {
+        background: var(--om-cream-soft);
+        border-radius: var(--om-radius);
+        padding: 0.4rem;
+        border: 1px solid var(--om-border);
+    }
+    .om-heatmap {
+        height: 280px;
+        width: 100%;
+    }
+    .om-heatmap-error {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 280px;
+        color: var(--om-muted);
+        font-size: 0.9rem;
+        text-align: center;
+        padding: 0 1rem;
+    }
+    .om-overseas-badge {
+        text-align: center;
+        margin-top: 0.55rem;
+        font-size: 0.85rem;
+        color: var(--om-muted);
+    }
+    .om-overseas-badge strong {
+        color: var(--om-clay);
+        font-weight: 600;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-lg-10">
@@ -17,14 +197,17 @@
                     OpenMentor 让你 5 分钟搭出专属 AI 助教，学生扫码即用。
                     数据全在本地，自带 API Key，完全开源。基于 QuickForm 二次开发，保留全部原有数据采集能力。
                 </p>
-                {% if current_user.is_authenticated %}
                 <div class="d-flex gap-2 flex-wrap">
+                    {% if current_user.is_authenticated %}
                     <a href="{{ url_for('assistant_list') }}" class="btn btn-primary">进入 AI 导师</a>
                     <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">数据任务</a>
+                    {% else %}
+                    <a href="{{ url_for('login') }}" class="btn btn-primary">登录开始</a>
+                    {% endif %}
+                    <button type="button" class="btn btn-outline-primary" id="om-checkin-trigger">
+                        📍 打卡与意见
+                    </button>
                 </div>
-                {% else %}
-                <a href="{{ url_for('login') }}" class="btn btn-primary">登录开始</a>
-                {% endif %}
             </div>
         </div>
 
@@ -87,4 +270,296 @@
         </div>
     </div>
 </div>
+
+<!-- 打卡与意见浮窗 -->
+<div id="om-checkin-modal" class="om-checkin-modal" role="dialog" aria-modal="true" aria-labelledby="om-checkin-title">
+    <div class="om-checkin-dialog">
+        <div class="om-checkin-header">
+            <div>
+                <h3 id="om-checkin-title">📍 我也在用 OpenMentor</h3>
+                <p class="subtitle">告诉大家你来自哪里，我们一起把这张地图染色 🎨</p>
+            </div>
+            <button type="button" class="om-checkin-close" id="om-checkin-close" aria-label="关闭">×</button>
+        </div>
+
+        <!-- 实时热力图（modal 打开时拉数据） -->
+        <div class="om-checkin-stats" id="om-checkin-stats">
+            <p class="om-checkin-stats-line" id="om-checkin-stats-line">正在加载实时打卡数据…</p>
+            <div class="om-heatmap-wrap">
+                <div id="om-heatmap" class="om-heatmap"></div>
+            </div>
+            <p class="om-overseas-badge" id="om-checkin-overseas" style="display:none;"></p>
+        </div>
+
+        <div id="om-checkin-body"></div>
+        <div class="om-checkin-footer" id="om-checkin-footer">
+            <div class="om-checkin-display" id="om-checkin-display">请选择你所在的地区</div>
+            <div class="om-checkin-actions">
+                <button type="button" class="btn btn-primary" id="om-checkin-submit" disabled>打卡 ✓</button>
+                <a href="#" target="_blank" rel="noopener" class="btn btn-outline-secondary" id="om-feedback-link" style="display:none;">💬 提意见</a>
+            </div>
+            <p class="om-checkin-note">仅记录地区分布，不收集姓名、学校等任何识别信息</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    // ===== 提交配置（拿到 QuickForm 任务地址 / 飞书反馈链接后改这里） =====
+    // QuickForm 任务的 API URL，POST JSON：{ [FIELD_NAME]: '北京' }
+    const QUICKFORM_SUBMIT_URL = 'https://quickform.cn/api/xrtzrtf5vq';
+    const QUICKFORM_STATS_URL  = QUICKFORM_SUBMIT_URL + '/all';  // GET 读取所有打卡数据
+    const FIELD_NAME = 'province';
+    // 飞书反馈表单链接（留空则隐藏「提意见」按钮）
+    const FEEDBACK_URL = 'https://scnxnljz0ey0.feishu.cn/share/base/form/shrcn0CLrjvFlCBuHaTKp4lzJGb';
+    // ECharts 资源（懒加载，第一次打开浮窗才会拉）
+    const ECHARTS_SCRIPT_URL = "{{ url_for('static', filename='vendor/echarts/echarts.min.js') }}";
+    const CHINA_GEOJSON_URL  = "{{ url_for('static', filename='vendor/echarts/china.json') }}";
+
+    // GeoJSON 用全名（"北京市" / "广西壮族自治区"），打卡数据用短名（"北京" / "广西"）—— 这里做映射
+    const SHORT_TO_FULL = {
+        '北京': '北京市',   '天津': '天津市',   '上海': '上海市',   '重庆': '重庆市',
+        '河北': '河北省',   '山西': '山西省',   '辽宁': '辽宁省',   '吉林': '吉林省',
+        '黑龙江': '黑龙江省', '江苏': '江苏省',   '浙江': '浙江省',   '安徽': '安徽省',
+        '福建': '福建省',   '江西': '江西省',   '山东': '山东省',   '河南': '河南省',
+        '湖北': '湖北省',   '湖南': '湖南省',   '广东': '广东省',   '海南': '海南省',
+        '四川': '四川省',   '贵州': '贵州省',   '云南': '云南省',   '陕西': '陕西省',
+        '甘肃': '甘肃省',   '青海': '青海省',   '台湾': '台湾省',
+        '内蒙古': '内蒙古自治区', '广西': '广西壮族自治区', '西藏': '西藏自治区',
+        '宁夏': '宁夏回族自治区', '新疆': '新疆维吾尔自治区',
+        '香港': '香港特别行政区', '澳门': '澳门特别行政区',
+    };
+
+    const REGIONS = [
+        { name: '华北',   items: ['北京', '天津', '河北', '山西', '内蒙古'] },
+        { name: '东北',   items: ['辽宁', '吉林', '黑龙江'] },
+        { name: '华东',   items: ['上海', '江苏', '浙江', '安徽', '福建', '江西', '山东'] },
+        { name: '华中',   items: ['河南', '湖北', '湖南'] },
+        { name: '华南',   items: ['广东', '广西', '海南'] },
+        { name: '西南',   items: ['重庆', '四川', '贵州', '云南', '西藏'] },
+        { name: '西北',   items: ['陕西', '甘肃', '青海', '宁夏', '新疆'] },
+        { name: '港澳台', items: ['香港', '澳门', '台湾'] },
+        { name: '其他',   items: ['海外'] },
+    ];
+
+    const $ = id => document.getElementById(id);
+    const trigger    = $('om-checkin-trigger');
+    const modal      = $('om-checkin-modal');
+    const closeBtn   = $('om-checkin-close');
+    const body       = $('om-checkin-body');
+    const display    = $('om-checkin-display');
+    const submitBtn  = $('om-checkin-submit');
+    const footer     = $('om-checkin-footer');
+    const feedback   = $('om-feedback-link');
+    const statsLine  = $('om-checkin-stats-line');
+    const overseasEl = $('om-checkin-overseas');
+    const heatmapEl  = $('om-heatmap');
+    if (!trigger || !modal) return;
+
+    // 缓存：echarts / geoJson / chart 实例
+    let geoJson = null;
+    let chart   = null;
+    let echartsLoading = null;
+
+    function loadEcharts() {
+        if (window.echarts) return Promise.resolve();
+        if (echartsLoading) return echartsLoading;
+        echartsLoading = new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = ECHARTS_SCRIPT_URL;
+            s.onload = () => resolve();
+            s.onerror = () => reject(new Error('ECharts 资源加载失败'));
+            document.head.appendChild(s);
+        });
+        return echartsLoading;
+    }
+
+    async function loadHeatmap() {
+        statsLine.textContent = '正在加载实时打卡数据…';
+        overseasEl.style.display = 'none';
+        heatmapEl.innerHTML = '';
+
+        try {
+            const [, geoData, statsResp] = await Promise.all([
+                loadEcharts(),
+                geoJson ? Promise.resolve(geoJson) : fetch(CHINA_GEOJSON_URL).then(r => r.json()),
+                fetch(QUICKFORM_STATS_URL),
+            ]);
+            geoJson = geoData;
+            if (!statsResp.ok) throw new Error('数据接口 HTTP ' + statsResp.status);
+            const data = await statsResp.json();
+
+            // 聚合
+            const perProvince = {};
+            let total = 0, overseas = 0;
+            for (const sub of (data.submissions || [])) {
+                const p = sub && sub.province;
+                if (!p) continue;
+                total++;
+                if (p === '海外') { overseas++; continue; }
+                const full = SHORT_TO_FULL[p];
+                if (full) perProvince[full] = (perProvince[full] || 0) + 1;
+            }
+            const regionsHit = Object.keys(perProvince).length + (overseas > 0 ? 1 : 0);
+
+            statsLine.innerHTML = `已有 <strong>${total}</strong> 位老师打卡 · 覆盖 <strong>${regionsHit}</strong> 个地区`;
+            if (overseas > 0) {
+                overseasEl.innerHTML = `🌍 海外：<strong>${overseas}</strong> 位`;
+                overseasEl.style.display = 'block';
+            }
+
+            // 渲染地图
+            if (!echarts.getMap || !echarts.getMap('china')) {
+                echarts.registerMap('china', geoJson);
+            }
+            if (chart) { chart.dispose(); chart = null; }
+            chart = echarts.init(heatmapEl, null, { renderer: 'svg' });
+
+            const seriesData = Object.entries(perProvince).map(([name, value]) => ({ name, value }));
+            const maxVal = Math.max(1, ...Object.values(perProvince));
+
+            chart.setOption({
+                tooltip: {
+                    trigger: 'item',
+                    formatter: (p) => (p.value !== undefined && !isNaN(p.value))
+                        ? `${p.name}<br/>打卡 ${p.value} 次`
+                        : `${p.name}<br/>暂无打卡`,
+                    backgroundColor: 'rgba(20,17,12,0.92)',
+                    borderColor: 'transparent',
+                    textStyle: { color: '#fff', fontSize: 12 },
+                },
+                visualMap: {
+                    left: 8, bottom: 8,
+                    min: 0, max: maxVal,
+                    inRange: { color: ['#F5E6DD', '#D97757', '#A04D38'] },
+                    text: ['多', '少'],
+                    calculable: false,
+                    itemWidth: 9,
+                    itemHeight: 70,
+                    textStyle: { color: '#6B6760', fontSize: 11 },
+                },
+                series: [{
+                    type: 'map',
+                    map: 'china',
+                    roam: false,
+                    aspectScale: 0.85,
+                    label: { show: false },
+                    itemStyle: {
+                        areaColor: '#FFFFFF',
+                        borderColor: '#C9C3B8',
+                        borderWidth: 0.4,
+                    },
+                    emphasis: {
+                        label: { show: true, color: '#141413', fontSize: 11 },
+                        itemStyle: { areaColor: '#F5E6DD', borderColor: '#D97757', borderWidth: 1 },
+                    },
+                    data: seriesData,
+                }],
+            });
+            // 浮窗刚打开时容器尺寸可能还没稳定，下一帧 resize 一次
+            requestAnimationFrame(() => chart && chart.resize());
+        } catch (err) {
+            console.warn('热力图加载失败:', err);
+            statsLine.innerHTML = '<span style="color:var(--om-muted);">实时数据加载失败 · 不影响打卡</span>';
+            heatmapEl.innerHTML = '<div class="om-heatmap-error">🌐 暂时无法加载热力图<br/>（可能是网络或跨域问题，仍可继续打卡）</div>';
+        }
+    }
+
+    window.addEventListener('resize', () => { if (chart) chart.resize(); });
+
+    if (FEEDBACK_URL) {
+        feedback.href = FEEDBACK_URL;
+        feedback.style.display = '';
+    }
+
+    let selected = null;
+
+    function renderGrid() {
+        body.innerHTML = REGIONS.map(r => `
+            <div class="om-checkin-region">
+                <p class="om-checkin-region-title">${r.name}</p>
+                <div class="om-province-grid">
+                    ${r.items.map(name => `
+                        <button type="button" class="om-province-btn${name === '海外' ? ' overseas' : ''}" data-name="${name}">${name}</button>
+                    `).join('')}
+                </div>
+            </div>
+        `).join('');
+        body.querySelectorAll('.om-province-btn').forEach(b => {
+            b.addEventListener('click', () => selectName(b.dataset.name));
+        });
+    }
+
+    function selectName(name) {
+        selected = name;
+        body.querySelectorAll('.om-province-btn').forEach(b => {
+            b.classList.toggle('selected', b.dataset.name === name);
+        });
+        display.innerHTML = `已选择：<strong>${name}</strong>`;
+        submitBtn.disabled = false;
+    }
+
+    function openModal() {
+        selected = null;
+        submitBtn.disabled = true;
+        submitBtn.textContent = '打卡 ✓';
+        display.textContent = '请选择你所在的地区';
+        footer.style.display = '';
+        renderGrid();
+        modal.classList.add('is-open');
+        loadHeatmap();
+    }
+
+    function closeModal() {
+        modal.classList.remove('is-open');
+    }
+
+    async function submit() {
+        if (!selected) return;
+        submitBtn.disabled = true;
+        submitBtn.textContent = '正在提交…';
+        try {
+            if (!QUICKFORM_SUBMIT_URL) {
+                await new Promise(r => setTimeout(r, 350));
+                console.log('[占位] 待提交：', { [FIELD_NAME]: selected });
+            } else {
+                const resp = await fetch(QUICKFORM_SUBMIT_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ [FIELD_NAME]: selected }),
+                });
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            }
+            showSuccess();
+        } catch (err) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = '打卡 ✓';
+            alert('提交失败：' + (err.message || err));
+        }
+    }
+
+    function showSuccess() {
+        body.innerHTML = `
+            <div class="om-checkin-success">
+                <div class="icon">🎉</div>
+                <h4>感谢你的打卡！</h4>
+                <p>你来自 <strong>${selected}</strong>，已为 OpenMentor 使用者地图加上了一笔。</p>
+            </div>
+        `;
+        footer.style.display = 'none';
+        // 提交成功后刷新一下热力图，让用户立刻看到自己那一笔
+        loadHeatmap();
+    }
+
+    trigger.addEventListener('click', openModal);
+    closeBtn.addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal.classList.contains('is-open')) closeModal();
+    });
+    submitBtn.addEventListener('click', submit);
+})();
+</script>
 {% endblock %}
