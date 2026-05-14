@@ -35,7 +35,7 @@ OpenMentor 是基于 [QuickForm 2.0](https://github.com/wstlab/quickform) 二次
 
 ### 推荐 ①：Windows 免安装包（最快 · 双击即用）
 
-Windows 用户从 [**📘 OpenMentor 教程文档**](https://scnxnljz0ey0.feishu.cn/docx/I8qxdpNdPo38xJxsaiscMC09n6g)（已上传免安装包和代码包）下载 `OpenMentor_V1.1.3_免安装包.zip`，解压后**直接双击 `OpenMentor启动器.bat`** 即可自动安装依赖并运行项目，无需手动装 Python 或 pip。
+Windows 用户从 [**📘 OpenMentor 教程文档**](https://scnxnljz0ey0.feishu.cn/docx/I8qxdpNdPo38xJxsaiscMC09n6g)（已上传免安装包和代码包）下载 `OpenMentor_V1.2.0_免安装包.zip`，解压后**直接双击 `OpenMentor启动器.bat`** 即可自动安装依赖并运行项目，无需手动装 Python 或 pip。
 
 启动后会先弹出「OpenMentor 一键部署安装程序」自动补齐依赖，随后自动打开「OpenMentor 启动器」界面，点「启动服务」即可使用。
 
