@@ -23,15 +23,6 @@ Thumbs.db
 *.local
 
 # ---------- 用户数据（运行时生成） ----------
-# 老师本地的 SQLite 数据库（含 AI 配置 / 对话记录 / 学情报告元数据 等）
-openmentor.db
-openmentor.db-journal
-openmentor.db-wal
-openmentor.db-shm
-
-# HTTPS 自签证书（如启用 OM_HTTPS=1 时本地生成）
-.cert/
-
 # 学生上传的图片 / 文件 / AI 生成的图（每个 AI 导师一个子目录）
 static/uploads/openmentor/*
 !static/uploads/openmentor/.gitkeep
