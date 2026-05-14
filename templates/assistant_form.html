@@ -81,11 +81,16 @@
                     </div>
 
                     <div class="mb-4">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
                             <label for="system_prompt" class="form-label fw-semibold mb-0">系统提示词（System Prompt） <span class="text-danger">*</span></label>
-                            <button type="button" id="btn-gen-prompt" class="btn btn-sm" style="background: #D97757; color: white; font-weight: 600; border: none; border-radius: 8px; padding: 0.3rem 0.875rem;">
-                                <i class="bi bi-magic"></i> AI 帮我写提示词
-                            </button>
+                            <div class="d-flex gap-2 flex-wrap">
+                                <button type="button" id="btn-opt-prompt" class="btn btn-sm" style="background: #5B7553; color: white; font-weight: 600; border: none; border-radius: 8px; padding: 0.3rem 0.875rem;" title="基于已有 prompt 针对性优化">
+                                    <i class="bi bi-stars"></i> AI 优化这段
+                                </button>
+                                <button type="button" id="btn-gen-prompt" class="btn btn-sm" style="background: #D97757; color: white; font-weight: 600; border: none; border-radius: 8px; padding: 0.3rem 0.875rem;">
+                                    <i class="bi bi-magic"></i> AI 帮我写提示词
+                                </button>
+                            </div>
                         </div>
                         <textarea class="form-control" id="system_prompt" name="system_prompt" rows="6" required
                                   placeholder="例：你是一位耐心的高中数学老师。学生提问时，先引导他思考解题思路，再一步步讲解，避免直接给出答案。语气温和，多用比喻。不回答与数学无关的内容。">{{ assistant.system_prompt if assistant else '' }}</textarea>
@@ -169,6 +174,54 @@
                             <div id="prompt-history-list" style="padding:0.5rem 0; overflow-y:auto; flex:1;"></div>
                             <div style="padding:0.6rem 1.25rem; border-top:1px solid #E5E0D8; text-align:right;">
                                 <button type="button" id="prompt-history-clear" class="btn btn-link btn-sm text-danger" style="text-decoration:none;">清空历史</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- AI 优化提示词模态框 -->
+                    <div id="optimize-modal" style="display:none; position:fixed; inset:0; background:rgba(20,17,12,0.55); z-index:1100; align-items:center; justify-content:center; padding:1rem; overflow-y:auto;">
+                        <div style="background:white; border-radius:14px; max-width:760px; width:100%; max-height:92vh; overflow-y:auto; padding:1.5rem 1.75rem;">
+                            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.5rem;">
+                                <div>
+                                    <h4 style="margin:0; color:#141413; font-weight:700;"><i class="bi bi-stars"></i> AI 优化这段提示词</h4>
+                                    <p style="margin:0.25rem 0 0; color:#6B6760; font-size:0.9rem;">基于你已有的 prompt 针对性优化，保留有用的部分。</p>
+                                </div>
+                                <button type="button" id="optimize-modal-close" style="background:transparent; border:none; font-size:1.5rem; color:#94918B; cursor:pointer; padding:0 0.25rem;">×</button>
+                            </div>
+                            <hr>
+
+                            <div class="mb-3">
+                                <label class="fw-semibold mb-1" style="font-size:0.95rem;">你当前的提示词</label>
+                                <textarea id="optimize-current" class="form-control" rows="6" readonly
+                                          style="font-family:inherit; font-size:0.85rem; background:#F0EEE6; color:#2D2A24;"></textarea>
+                                <div class="form-text text-muted small">来自主表单，只读。优化结果不会自动覆盖，需要你手动确认。</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="optimize-goals" class="fw-semibold mb-1" style="font-size:0.95rem;">你希望如何优化？</label>
+                                <textarea id="optimize-goals" class="form-control" rows="3"
+                                          placeholder="例：让它更适合小学三年级 / 增加更多苏格拉底式提问 / 减少直接给答案的倾向 / 加入对学生情绪的回应 / 缩短 30% 不影响要点"></textarea>
+                                <div class="form-text text-muted small">越具体 AI 越好动手。可以是风格、语气、教学法、边界、长度等任何方向。</div>
+                            </div>
+
+                            <div id="optimize-error" style="display:none; padding:0.5rem 0.75rem; background:#F2DCD9; color:#8B342E; border-radius:6px; margin-bottom:0.75rem; font-size:0.875rem;"></div>
+
+                            <!-- 优化结果展示区 -->
+                            <div id="optimize-result-wrap" style="display:none; margin-top:1rem;">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <label class="fw-semibold mb-0" style="font-size:0.95rem;"><i class="bi bi-check-circle"></i> AI 优化后的版本</label>
+                                    <small class="text-muted" id="optimize-meta"></small>
+                                </div>
+                                <textarea id="optimize-result" class="form-control" rows="10"
+                                          style="font-family:inherit; font-size:0.9rem; background:#E5EBDF;"></textarea>
+                                <div class="form-text text-muted">可以直接修改后再采用。</div>
+                            </div>
+
+                            <div style="display:flex; gap:0.5rem; justify-content:flex-end; margin-top:1rem; flex-wrap:wrap;">
+                                <button type="button" id="optimize-cancel" class="btn btn-secondary" style="background:#6B6760; border:none;">取消</button>
+                                <button type="button" id="optimize-regen" class="btn btn-outline-primary" style="display:none;"><i class="bi bi-arrow-clockwise"></i> 再优化一轮</button>
+                                <button type="button" id="optimize-apply" class="btn btn-success" style="display:none; background:#5B7553; border:none; font-weight:600;"><i class="bi bi-check-lg"></i> 应用到主表单</button>
+                                <button type="button" id="optimize-submit" class="btn btn-primary" style="background:#5B7553; border:none; font-weight:600;"><i class="bi bi-stars"></i> 生成优化版</button>
                             </div>
                         </div>
                     </div>
@@ -539,6 +592,129 @@
         sysPromptEl.focus();
         closeModal();
     });
+})();
+
+// AI 优化提示词模态框
+(function() {
+    var $ = function(id) { return document.getElementById(id); };
+    var sysPromptEl = $('system_prompt');
+    var btnOpen = $('btn-opt-prompt');
+    var modal = $('optimize-modal');
+    var btnClose = $('optimize-modal-close');
+    var btnCancel = $('optimize-cancel');
+    var btnSubmit = $('optimize-submit');
+    var btnRegen = $('optimize-regen');
+    var btnApply = $('optimize-apply');
+    var currentEl = $('optimize-current');
+    var goalsEl = $('optimize-goals');
+    var resultWrap = $('optimize-result-wrap');
+    var resultEl = $('optimize-result');
+    var metaEl = $('optimize-meta');
+    var errorEl = $('optimize-error');
+
+    if (!btnOpen || !modal) return;
+
+    function showError(msg) {
+        errorEl.textContent = msg;
+        errorEl.style.display = 'block';
+    }
+    function clearError() { errorEl.style.display = 'none'; errorEl.textContent = ''; }
+
+    function openModal() {
+        var current = (sysPromptEl.value || '').trim();
+        if (!current) {
+            alert('请先在「系统提示词」输入框里填一段 prompt 再来优化（如果还没有，请用左边的「AI 帮我写提示词」从零生成）');
+            return;
+        }
+        currentEl.value = current;
+        goalsEl.value = '';
+        resultWrap.style.display = 'none';
+        resultEl.value = '';
+        metaEl.textContent = '';
+        btnRegen.style.display = 'none';
+        btnApply.style.display = 'none';
+        btnSubmit.style.display = '';
+        btnSubmit.disabled = false;
+        btnSubmit.innerHTML = '<i class="bi bi-stars"></i> 生成优化版';
+        clearError();
+        modal.style.display = 'flex';
+        setTimeout(function() { goalsEl.focus(); }, 50);
+    }
+
+    function closeModal() {
+        modal.style.display = 'none';
+    }
+
+    async function submit() {
+        clearError();
+        var goals = (goalsEl.value || '').trim();
+        if (!goals) { showError('请说明你希望如何优化'); goalsEl.focus(); return; }
+
+        btnSubmit.disabled = true;
+        btnSubmit.innerHTML = '<i class="bi bi-hourglass-split"></i> AI 思考中…（10-30 秒）';
+
+        try {
+            var resp = await fetch('/assistant/optimize_prompt', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    current_prompt: currentEl.value,
+                    optimization_goals: goals,
+                }),
+            });
+            var data = await resp.json().catch(function() { return {}; });
+            if (!resp.ok || !data.success) {
+                showError(data.message || '优化失败 (' + resp.status + ')');
+                btnSubmit.disabled = false;
+                btnSubmit.innerHTML = '<i class="bi bi-stars"></i> 生成优化版';
+                return;
+            }
+            // 展示结果
+            resultEl.value = data.optimized_prompt || '';
+            metaEl.textContent = '由 ' + (data.model_used || '') + ' 生成 · ' + (resultEl.value.length) + ' 字';
+            resultWrap.style.display = 'block';
+            btnSubmit.style.display = 'none';
+            btnRegen.style.display = '';
+            btnApply.style.display = '';
+            // 滚到结果区
+            resultEl.scrollIntoView({behavior: 'smooth', block: 'center'});
+        } catch (e) {
+            showError('请求失败：' + (e.message || e));
+            btnSubmit.disabled = false;
+            btnSubmit.innerHTML = '<i class="bi bi-stars"></i> 生成优化版';
+        }
+    }
+
+    function regen() {
+        // 用当前的 result 作为新的"当前 prompt"再优化一轮，goals 保持不变
+        currentEl.value = resultEl.value || currentEl.value;
+        resultWrap.style.display = 'none';
+        resultEl.value = '';
+        btnRegen.style.display = 'none';
+        btnApply.style.display = 'none';
+        btnSubmit.style.display = '';
+        submit();
+    }
+
+    function apply() {
+        var optimized = (resultEl.value || '').trim();
+        if (!optimized) { showError('优化结果为空'); return; }
+        sysPromptEl.value = optimized;
+        sysPromptEl.scrollIntoView({behavior: 'smooth', block: 'center'});
+        sysPromptEl.focus();
+        closeModal();
+    }
+
+    btnOpen.addEventListener('click', openModal);
+    btnClose.addEventListener('click', closeModal);
+    btnCancel.addEventListener('click', closeModal);
+    modal.addEventListener('click', function(e) { if (e.target === modal) closeModal(); });
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && modal.style.display === 'flex') closeModal();
+    });
+    btnSubmit.addEventListener('click', submit);
+    btnRegen.addEventListener('click', regen);
+    btnApply.addEventListener('click', apply);
 })();
 
 // 头像即时预览

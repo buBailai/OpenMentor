@@ -3774,6 +3774,125 @@ def assistant_clone(assistant_id):
         db.close()
 
 
+# ---- AI 导师广场（基于 quickform.cn 公开任务作为后端存储）----
+
+OM_PLAZA_API_URL = 'https://quickform.cn/api/pa9eaj18kz'
+OM_PLAZA_PRESET_SUBJECTS = ['语文', '数学', '英语', '物理', '化学', '生物', '历史', '政治', '地理', '信息', '科学', '音乐', '体育', '美术', '心理', '劳动', '综合实践', '通用']
+OM_PLAZA_PRESET_GRADES = ['小学', '初中', '高中', '大学', '培训']
+
+
+@app.route('/changelog')
+@login_required
+def changelog():
+    """更新日志页面：按版本顺序展示对老师有感的功能更新"""
+    return render_template('changelog.html')
+
+
+@app.route('/plaza')
+@login_required
+def plaza():
+    """AI 导师广场页面：浏览全国老师分享的 AI 导师，一键克隆"""
+    return render_template(
+        'plaza.html',
+        plaza_api_url=OM_PLAZA_API_URL,
+        preset_subjects=OM_PLAZA_PRESET_SUBJECTS,
+        preset_grades=OM_PLAZA_PRESET_GRADES,
+    )
+
+
+@app.route('/api/assistant/<int:assistant_id>/share_to_plaza', methods=['POST'])
+@login_required
+def assistant_share_to_plaza(assistant_id):
+    """老师把自己的 AI 导师配置 POST 到广场任务（quickform.cn）"""
+    db = SessionLocal()
+    try:
+        assistant = db.query(Task).filter_by(
+            id=assistant_id, user_id=current_user.id, is_assistant=True
+        ).first()
+        if not assistant:
+            return jsonify({'code': 404, 'message': 'AI 导师不存在或无权访问'}), 404
+
+        body = request.get_json(silent=True) or {}
+        subject = (body.get('subject') or '').strip()[:30]
+        grade = (body.get('grade') or '').strip()[:20]
+        purpose = (body.get('purpose') or '').strip()[:60]
+        if not subject or not grade or not purpose:
+            return jsonify({'code': 400, 'message': '学科 / 学段 / 用途都是必填'}), 400
+
+        nickname = (body.get('nickname') or '').strip()[:30]
+        school = (body.get('school') or '').strip()[:60]
+        description = (body.get('description') or '').strip()[:500]
+
+        tpl = _assistant_to_template_dict(assistant)
+        # 老师可在分享时改写一份"专门展示给广场看"的描述
+        if description:
+            tpl['description'] = description
+
+        plaza_payload = {
+            'subject': subject,
+            'grade': grade,
+            'purpose': purpose,
+            'description': description or (tpl.get('description') or '')[:300],
+            'nickname': nickname or '匿名',
+            'school': school,
+            'shared_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'om_version': '1.1.4',
+            'config': tpl,
+        }
+        try:
+            resp = requests.post(OM_PLAZA_API_URL, json=plaza_payload, timeout=10)
+            if resp.status_code != 200:
+                return jsonify({
+                    'code': 500,
+                    'message': f'广场服务返回 HTTP {resp.status_code}: {resp.text[:200]}'
+                }), 500
+        except requests.exceptions.RequestException as e:
+            logger.exception(f'分享 AI 导师到广场失败: {e}')
+            return jsonify({'code': 500, 'message': f'连接广场服务失败: {e}'}), 500
+
+        return jsonify({
+            'code': 200,
+            'success': True,
+            'message': '已成功分享到广场',
+        })
+    finally:
+        db.close()
+
+
+@app.route('/api/plaza/clone', methods=['POST'])
+@login_required
+def plaza_clone():
+    """从广场卡片直接克隆一份 AI 导师到当前老师的库里"""
+    db = SessionLocal()
+    try:
+        body = request.get_json(silent=True) or {}
+        config = body.get('config')
+        if not isinstance(config, dict):
+            return jsonify({'code': 400, 'message': '克隆数据无效（缺少 config 对象）'}), 400
+        try:
+            kwargs = _template_dict_to_assistant_kwargs(config, current_user.id)
+        except ValueError as e:
+            return jsonify({'code': 400, 'message': f'模板字段错误：{e}'}), 400
+
+        # 标题加「广场克隆」后缀，方便老师区分来源
+        kwargs['title'] = f"{kwargs['title']}（广场克隆）"
+
+        new_assistant = Task(**kwargs)
+        db.add(new_assistant)
+        db.commit()
+        db.refresh(new_assistant)
+
+        return jsonify({
+            'code': 200,
+            'success': True,
+            'assistant_id': new_assistant.id,
+            'message': f'已克隆为「{new_assistant.title}」',
+            'redirect_url': url_for('assistant_detail', assistant_id=new_assistant.id),
+        })
+    finally:
+        db.close()
+
+
 @app.route('/assistant/import', methods=['GET', 'POST'])
 @login_required
 def assistant_import():
@@ -3846,6 +3965,25 @@ def assistant_delete(assistant_id):
 # ------------------------------------------------------------
 # OpenMentor: AI 辅助生成系统提示词（Week 3 重点功能）
 # ------------------------------------------------------------
+
+PROMPT_OPTIMIZE_TEMPLATE = """你是一位资深的"教育 AI 提示词工程师"。老师已经在用一个 system prompt，希望你针对性地优化它。
+
+【老师当前的 system prompt】
+{current_prompt}
+
+【老师希望优化的方向】
+{optimization_goals}
+
+请按以下原则优化：
+1. **保留老师原 prompt 中能正常工作、有价值的部分**（角色身份、已有的具体规则、风格基调等），不要全盘推翻
+2. 针对老师指出的优化方向做**精准修改 / 补充 / 调整**，避免画蛇添足改无关部分
+3. 如果老师的优化目标本身可能违背教学法（例如"让 AI 直接给学生答案"），可以在保留原意的同时给出更教学友好的实现方式（比如改成"先引导后给答案"）
+4. **输出完整的、可直接采用的新版 system prompt**（不要输出 diff 或修改对比）
+5. 总长度控制在 800 字以内，简洁有力
+6. 直接输出 system prompt 正文（不要"以下是优化后版本"之类的开场白，也不要 Markdown 代码块包裹）
+7. 用中文撰写
+"""
+
 
 PROMPT_META_TEMPLATE = """你是一位资深的"教育 AI 提示词工程师"，擅长为中国中小学/高校老师设计专业、可落地的 AI 助教系统提示词（system prompt）。
 
@@ -3981,6 +4119,65 @@ def assistant_generate_prompt():
             'model_used': ai_config.selected_model,
             'meta_prompt_length': len(meta_prompt),
             'material_count': len(material_blocks),
+        })
+    finally:
+        db.close()
+
+
+@app.route('/assistant/optimize_prompt', methods=['POST'])
+@login_required
+def assistant_optimize_prompt():
+    """AI 优化已有 system prompt：老师给出当前 prompt + 优化目标 → AI 返回优化版"""
+    db = SessionLocal()
+    try:
+        body = request.get_json(silent=True) or {}
+        current_prompt = (body.get('current_prompt') or '').strip()
+        optimization_goals = (body.get('optimization_goals') or '').strip()
+
+        if not current_prompt:
+            return jsonify({'code': 400, 'message': '请先填一段 system prompt 再来优化'}), 400
+        if len(current_prompt) > 8000:
+            return jsonify({'code': 400, 'message': 'prompt 过长（≤ 8000 字符）'}), 400
+        if not optimization_goals:
+            return jsonify({'code': 400, 'message': '请说明你希望如何优化（例：更适合小学生 / 增加互动性）'}), 400
+        if len(optimization_goals) > 2000:
+            return jsonify({'code': 400, 'message': '优化目标过长（≤ 2000 字符）'}), 400
+
+        meta_prompt = PROMPT_OPTIMIZE_TEMPLATE.format(
+            current_prompt=current_prompt,
+            optimization_goals=optimization_goals,
+        )
+
+        ai_config = db.query(AIConfig).filter_by(user_id=current_user.id).first()
+        if not ai_config:
+            return jsonify({'code': 500, 'message': '请先在「个人设置」中配置一个 AI 模型'}), 500
+        cur_model_cfg = next((mc for mc in ai_config.model_configs if mc.model_name == ai_config.selected_model), None)
+        if not cur_model_cfg or not (cur_model_cfg.api_key or '').strip():
+            if ai_config.selected_model != 'ollama':
+                return jsonify({'code': 500, 'message': f'当前选中的 {ai_config.selected_model} 未配置 API Key'}), 500
+
+        try:
+            generated = call_ai_model(meta_prompt, ai_config)
+        except Exception as e:
+            logger.exception('调用 AI 优化提示词失败')
+            return jsonify({'code': 500, 'message': f'调用 AI 失败：{e}'}), 500
+
+        if not generated or not generated.strip():
+            return jsonify({'code': 500, 'message': 'AI 返回空内容，请重试'}), 500
+
+        # 清理常见前缀（同 generate_prompt 处理）
+        generated = generated.strip()
+        for prefix in ('```\n', '```text\n', '```markdown\n', '```'):
+            if generated.startswith(prefix):
+                generated = generated[len(prefix):].lstrip()
+        if generated.endswith('```'):
+            generated = generated[:-3].rstrip()
+
+        return jsonify({
+            'code': 200,
+            'success': True,
+            'optimized_prompt': generated,
+            'model_used': ai_config.selected_model,
         })
     finally:
         db.close()

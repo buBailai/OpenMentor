@@ -51,7 +51,138 @@
                     <i class="bi bi-files"></i> 克隆
                 </button>
             </form>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="om-share-plaza-btn" data-assistant-id="{{ assistant.id }}" data-assistant-title="{{ assistant.title }}">
+                <i class="bi bi-broadcast"></i> 分享到广场
+            </button>
         </div>
+
+        <!-- 分享到广场模态框 -->
+        <div id="om-plaza-share-modal" style="display:none; position:fixed; inset:0; background:rgba(20,17,12,0.55); z-index:1100; align-items:center; justify-content:center; padding:1rem; overflow-y:auto;">
+            <div style="background:#fff; border-radius:14px; max-width:600px; width:100%; max-height:92vh; overflow-y:auto; padding:1.5rem 1.75rem; border:1px solid #E5E0D8;">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.5rem;">
+                    <div>
+                        <h4 style="margin:0; color:#141413; font-weight:700;"><i class="bi bi-broadcast"></i> 分享到 AI 导师广场</h4>
+                        <p style="margin:0.25rem 0 0; color:#6B6760; font-size:0.9rem;">公开发布到全国 OpenMentor 老师可见，让好的 AI 导师被更多人受益</p>
+                    </div>
+                    <button type="button" id="om-share-close" style="background:transparent; border:none; font-size:1.5rem; color:#94918B; cursor:pointer; padding:0 0.25rem;">×</button>
+                </div>
+
+                <div style="background:#F2DCD9; border:1px solid rgba(184,70,62,0.25); color:#7A2A26; padding:0.6rem 0.875rem; border-radius:8px; font-size:0.85rem; margin:0.75rem 0 1rem;">
+                    ⚠️ <strong>请先确认：</strong>分享后<strong>不可撤回 / 不可编辑</strong>。请先检查 system prompt 是否含真实姓名 / 学校 / 学生信息等敏感内容。
+                </div>
+
+                <div class="mb-3">
+                    <label class="fw-semibold mb-1" style="font-size:0.92rem;">学科 <span class="text-danger">*</span></label>
+                    <input type="text" id="om-share-subject" class="form-control" list="om-share-subject-list" placeholder="选择或自己输入" required>
+                    <datalist id="om-share-subject-list">
+                        <option value="语文"><option value="数学"><option value="英语"><option value="物理"><option value="化学"><option value="生物"><option value="历史"><option value="政治"><option value="地理"><option value="信息"><option value="科学"><option value="音乐"><option value="体育"><option value="美术"><option value="心理"><option value="劳动"><option value="综合实践"><option value="通用">
+                    </datalist>
+                </div>
+                <div class="mb-3">
+                    <label class="fw-semibold mb-1" style="font-size:0.92rem;">学段 <span class="text-danger">*</span></label>
+                    <input type="text" id="om-share-grade" class="form-control" list="om-share-grade-list" placeholder="选择或自己输入" required>
+                    <datalist id="om-share-grade-list">
+                        <option value="小学"><option value="初中"><option value="高中"><option value="大学"><option value="培训">
+                    </datalist>
+                </div>
+                <div class="mb-3">
+                    <label class="fw-semibold mb-1" style="font-size:0.92rem;">用途 <span class="text-danger">*</span></label>
+                    <input type="text" id="om-share-purpose" class="form-control" placeholder="例：二次函数辅导 / 作文批改 / 实验探究启发 / 心理倾听" required>
+                </div>
+                <div class="mb-3">
+                    <label class="fw-semibold mb-1" style="font-size:0.92rem;">广场展示用的描述（可选，不填用导师原描述）</label>
+                    <textarea id="om-share-desc" class="form-control" rows="2" placeholder="一两句话告诉别的老师，这个 AI 导师有啥用 / 适合什么场景"></textarea>
+                </div>
+                <div class="row g-2 mb-3">
+                    <div class="col-md-6">
+                        <label class="fw-semibold mb-1" style="font-size:0.92rem;">你的昵称（选填）</label>
+                        <input type="text" id="om-share-nickname" class="form-control" placeholder="留空就显示「匿名」">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="fw-semibold mb-1" style="font-size:0.92rem;">你的学校（选填）</label>
+                        <input type="text" id="om-share-school" class="form-control" placeholder="留空就不显示">
+                    </div>
+                </div>
+
+                <div id="om-share-error" style="display:none; padding:0.5rem 0.75rem; background:#F2DCD9; color:#8B342E; border-radius:6px; margin-bottom:0.75rem; font-size:0.875rem;"></div>
+
+                <div style="display:flex; gap:0.5rem; justify-content:flex-end; flex-wrap:wrap;">
+                    <button type="button" id="om-share-cancel" class="btn btn-secondary" style="background:#6B6760; border:none;">取消</button>
+                    <button type="button" id="om-share-submit" class="btn btn-primary" style="background:#D97757; border:none; font-weight:600;"><i class="bi bi-broadcast"></i> 确认分享</button>
+                </div>
+            </div>
+        </div>
+
+        <script>
+        (function(){
+            var btn = document.getElementById('om-share-plaza-btn');
+            var modal = document.getElementById('om-plaza-share-modal');
+            if (!btn || !modal) return;
+            var assistantId = btn.dataset.assistantId;
+            var byId = function(id){ return document.getElementById(id); };
+            var elSubject = byId('om-share-subject');
+            var elGrade = byId('om-share-grade');
+            var elPurpose = byId('om-share-purpose');
+            var elDesc = byId('om-share-desc');
+            var elNickname = byId('om-share-nickname');
+            var elSchool = byId('om-share-school');
+            var elError = byId('om-share-error');
+            var elSubmit = byId('om-share-submit');
+            var btnClose = byId('om-share-close');
+            var btnCancel = byId('om-share-cancel');
+
+            function openModal(){
+                elError.style.display = 'none';
+                elSubmit.disabled = false;
+                elSubmit.innerHTML = '<i class="bi bi-broadcast"></i> 确认分享';
+                modal.style.display = 'flex';
+            }
+            function closeModal(){ modal.style.display = 'none'; }
+            function showError(msg){ elError.textContent = msg; elError.style.display = 'block'; }
+
+            btn.addEventListener('click', openModal);
+            btnClose.addEventListener('click', closeModal);
+            btnCancel.addEventListener('click', closeModal);
+            modal.addEventListener('click', function(e){ if (e.target === modal) closeModal(); });
+
+            elSubmit.addEventListener('click', async function(){
+                var subject = (elSubject.value || '').trim();
+                var grade = (elGrade.value || '').trim();
+                var purpose = (elPurpose.value || '').trim();
+                if (!subject || !grade || !purpose) {
+                    showError('学科 / 学段 / 用途都是必填'); return;
+                }
+                elError.style.display = 'none';
+                elSubmit.disabled = true;
+                elSubmit.innerHTML = '<i class="bi bi-hourglass-split"></i> 分享中…';
+                try {
+                    var resp = await fetch('/api/assistant/' + assistantId + '/share_to_plaza', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            subject: subject, grade: grade, purpose: purpose,
+                            description: (elDesc.value || '').trim(),
+                            nickname: (elNickname.value || '').trim(),
+                            school: (elSchool.value || '').trim(),
+                        }),
+                    });
+                    var data = await resp.json().catch(function(){ return {}; });
+                    if (!resp.ok || !data.success) {
+                        showError(data.message || ('分享失败 HTTP ' + resp.status));
+                        elSubmit.disabled = false;
+                        elSubmit.innerHTML = '<i class="bi bi-broadcast"></i> 确认分享';
+                        return;
+                    }
+                    closeModal();
+                    alert('✓ ' + (data.message || '已成功分享到广场'));
+                } catch (e) {
+                    showError('请求失败：' + (e.message || e));
+                    elSubmit.disabled = false;
+                    elSubmit.innerHTML = '<i class="bi bi-broadcast"></i> 确认分享';
+                }
+            });
+        })();
+        </script>
 
         <!-- 学生链接卡片 -->
         <div class="card mb-4">

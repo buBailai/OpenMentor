@@ -1,0 +1,195 @@
+{% extends 'base.html' %}
+
+{% block title %}更新日志 - {{ get_app_name() }}{% endblock %}
+
+{% block styles %}
+<style>
+    .om-changelog { max-width: 820px; margin: 0 auto; }
+    .om-changelog .release {
+        background: var(--om-paper);
+        border: 1px solid var(--om-border);
+        border-radius: var(--om-radius-lg);
+        padding: 1.25rem 1.5rem;
+        margin-bottom: 1.25rem;
+    }
+    .om-changelog .release-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 0.6rem;
+        flex-wrap: wrap;
+    }
+    .om-changelog .release-version {
+        font-family: var(--om-font-serif);
+        font-weight: 600;
+        color: var(--om-clay);
+        font-size: 1.4rem;
+        letter-spacing: -0.01em;
+    }
+    .om-changelog .release.latest .release-version::after {
+        content: '当前版本';
+        background: var(--om-clay);
+        color: white;
+        font-family: var(--om-font-sans);
+        font-size: 0.65rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        margin-left: 0.6rem;
+        vertical-align: middle;
+        font-weight: 500;
+        letter-spacing: 0.05em;
+    }
+    .om-changelog .release-date {
+        color: var(--om-muted);
+        font-size: 0.85rem;
+        font-variant-numeric: tabular-nums;
+    }
+    .om-changelog .release-tagline {
+        color: var(--om-ink-soft);
+        font-size: 0.95rem;
+        margin: 0 0 0.85rem;
+        line-height: 1.5;
+    }
+    .om-changelog ul.feat-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+    .om-changelog ul.feat-list li {
+        padding: 0.35rem 0 0.35rem 1.5rem;
+        position: relative;
+        color: var(--om-ink-soft);
+        font-size: 0.92rem;
+        line-height: 1.6;
+    }
+    .om-changelog ul.feat-list li::before {
+        content: '✦';
+        position: absolute;
+        left: 0;
+        color: var(--om-clay);
+        font-size: 0.85rem;
+        top: 0.45rem;
+    }
+    .om-changelog ul.feat-list li strong { color: var(--om-ink); font-weight: 600; }
+    .om-changelog .timeline-foot {
+        text-align: center;
+        color: var(--om-subtle);
+        font-size: 0.82rem;
+        padding: 1rem 0 2rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="om-changelog">
+
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <div>
+            <h2 class="mb-1" style="font-family: var(--om-font-serif); font-weight: 500; color: var(--om-ink); letter-spacing: -0.01em;">更新日志</h2>
+            <p class="mb-0 text-muted small">OpenMentor 各版本面向老师的功能更新</p>
+        </div>
+    </div>
+
+    <!-- v1.2.0 -->
+    <div class="release latest">
+        <div class="release-head">
+            <span class="release-version">v1.2.0</span>
+            <span class="release-date">2026-05-14</span>
+        </div>
+        <p class="release-tagline">导师生态化 + 提示词智能优化 + 公式渲染</p>
+        <ul class="feat-list">
+            <li><strong>AI 导师广场</strong>：浏览全国老师分享的 AI 导师卡片，按学科 / 学段 / 关键词筛选，一键克隆到自己的库直接用</li>
+            <li><strong>分享自己的导师到广场</strong>：导师详情页一键发布，让好的提示词被更多老师受益（公开 + 不可撤回，已加二次确认）</li>
+            <li><strong>AI 优化已有提示词</strong>：在编辑导师时，告诉 AI 你想怎么改（更适合小学生 / 增加互动性 / 缩短篇幅 等），AI 在保留原意基础上精准优化</li>
+            <li><strong>数学 / 化学公式渲染</strong>：所有 AI 回复 / 学情报告 / 智能分析自动识别 LaTeX (`$x^2$` / `$$\int$$`) 和 mhchem 化学式 (`\ce{H2SO4}`)，由本地 KaTeX 排版</li>
+            <li><strong>首页打卡 + 意见入口</strong>：「📍 打卡与意见」按钮 + 中国地图实时打卡热力图，「💬 提意见」跳飞书反馈</li>
+            <li><strong>更新日志页</strong>：右上角用户菜单加入口，老师能直观看到每版改了啥</li>
+            <li>多处 UI 一致性修复：首页 hero 三按钮单行布局、各功能页标题字体统一</li>
+        </ul>
+    </div>
+
+    <!-- v1.1.4 -->
+    <div class="release">
+        <div class="release-head">
+            <span class="release-version">v1.1.4</span>
+            <span class="release-date">2026-05-14</span>
+        </div>
+        <p class="release-tagline">短促过渡版（很快被 v1.2.0 取代）</p>
+        <ul class="feat-list">
+            <li>本版本主要内容随后并入 v1.2.0，建议直接升级到 v1.2.0</li>
+        </ul>
+    </div>
+
+    <!-- v1.1.3 -->
+    <div class="release">
+        <div class="release-head">
+            <span class="release-version">v1.1.3</span>
+            <span class="release-date">2026-05-08</span>
+        </div>
+        <p class="release-tagline">流式报告 + 文档预览 + 体验打磨</p>
+        <ul class="feat-list">
+            <li><strong>AI 学情报告 SSE 流式生成</strong>：单学生 / 全班级一键生成结构化报告，AI 边写边显示，自动持久化到「报告历史」可回看 / 下载 / 删除</li>
+            <li><strong>附件 docx / xlsx 在线预览</strong>：浏览器端直接渲染 Word / Excel 文件，老师免下载查看学生作品</li>
+            <li><strong>提示词草稿历史</strong>：localStorage 自动保存最近 10 条 AI 生成的草稿，可随时恢复 / 删除 / 清空</li>
+            <li><strong>API Key 申请直达</strong>：设置页选模型后下方自动出现「申请 API Key」按钮，跳对应官网</li>
+        </ul>
+    </div>
+
+    <!-- v1.1.2 -->
+    <div class="release">
+        <div class="release-head">
+            <span class="release-version">v1.1.2</span>
+            <span class="release-date">2026-05-07</span>
+        </div>
+        <p class="release-tagline">AI 学情报告 + 多模态附件采集</p>
+        <ul class="feat-list">
+            <li><strong>AI 学情报告（首版）</strong>：基于学生对话历史和黑名单命中记录，AI 生成结构化分析报告</li>
+            <li><strong>QuickForm 任务支持多模态附件上传</strong>：原本仅采集 JSON 文本，现在 multipart 表单可附图片 / PDF / Word / Excel / 音视频</li>
+            <li><strong>附件按日期分桶存储</strong>：所有附件按 `<日期>/<会话>/` 二级目录组织，长期使用不会单层目录爆掉</li>
+            <li><strong>服务器本机打开附件文件夹</strong>：审计页一键 reveal in Finder / Explorer，自部署场景免下载</li>
+        </ul>
+    </div>
+
+    <!-- v1.1.1 -->
+    <div class="release">
+        <div class="release-head">
+            <span class="release-version">v1.1.1</span>
+            <span class="release-date">2026-05-07</span>
+        </div>
+        <p class="release-tagline">公开发布版</p>
+        <ul class="feat-list">
+            <li>OpenMentor 首次公开发布，由 <strong>厦门市演武小学 信息中心</strong> 基于 QuickForm 2.0 二次开发并开源到 GitHub</li>
+            <li>遵循「加法不减法」原则，QuickForm 原有任务管理 / 数据采集 / AI 报告等功能 100% 保留</li>
+        </ul>
+    </div>
+
+    <!-- v1.0 -->
+    <div class="release">
+        <div class="release-head">
+            <span class="release-version">v1.0</span>
+            <span class="release-date">2026-04-30</span>
+        </div>
+        <p class="release-tagline">第一个完整可用版本（内部）</p>
+        <ul class="feat-list">
+            <li><strong>AI 导师 CRUD</strong>：创建 / 编辑 / 删除 AI 导师，每个独立配置 system prompt、欢迎语、模型、多模态开关</li>
+            <li><strong>AI 帮你写提示词</strong>：填几个问题或上传素材，AI 自动生成专业 system prompt 草稿</li>
+            <li><strong>学生扫码 / 链接即用</strong>：填班级 + 姓名身份验证后，SSE 流式 AI 回复，支持图片 / 文档输入 / AI 生图</li>
+            <li><strong>实时审计大屏</strong>：老师后台实时看每个学生的对话流，含图片 / 文件 / AI 生成图，每 5-8 秒自动刷新</li>
+            <li><strong>学情大屏</strong>：基于 ECharts 的 7 张图（每日趋势 / 班级活跃度 / 学生参与排行 / 满意度 / 24 小时热度等）</li>
+            <li><strong>班级花名册</strong>：Excel 导入或自由填写模式班级选项配置，年级 / 班级两层下拉</li>
+            <li><strong>对话评分</strong>：学生可对每条 AI 回复点 👍/👎，老师后台看满意度统计</li>
+            <li><strong>多重安全防护</strong>：每日消息上限 / 链接有效期 / 关键词黑名单（暴力·色情·越狱·作弊）/ 越狱检测 / 紧急熔断</li>
+            <li><strong>6 大国产 LLM 任选</strong>：DeepSeek / 豆包 / 通义 / 智谱 / 硅基流动 / Ollama 本地，全部 BYO API Key</li>
+            <li><strong>模板分享</strong>：一键导出 JSON 模板，老师之间互相导入克隆</li>
+            <li><strong>设备 × 身份双重隔离</strong>：token = sha256(device_uuid + class + name)，同名不同设备相互不可见</li>
+            <li><strong>本地化部署 + 数据隔离</strong>：所有数据存教师本地 SQLite，不上传任何第三方（除调用 LLM API）</li>
+        </ul>
+    </div>
+
+    <p class="timeline-foot">
+        <i class="bi bi-stars"></i> 还有更早的内部迭代（v0.x）但未公开发布，从 v1.1.1 起接受社区使用。
+    </p>
+
+</div>
+{% endblock %}

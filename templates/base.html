@@ -825,6 +825,9 @@
                         <a class="nav-link" href="{{ url_for('assistant_list') }}">AI 导师</a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('plaza') }}">导师广场</a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('roster_index') }}">班级花名册</a>
                     </li>
                     <li class="nav-item">
@@ -859,6 +862,7 @@
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="navbarDropdown">
                             <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="bi bi-gear"></i> 设置</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('changelog') }}"><i class="bi bi-journal-text"></i> 更新日志</a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="bi bi-box-arrow-right"></i> 退出登录</a></li>
                         </ul>

@@ -1,0 +1,413 @@
+{% extends 'base.html' %}
+
+{% block title %}AI 导师广场 - {{ get_app_name() }}{% endblock %}
+
+{% block styles %}
+<style>
+    /* 标题区与其他页面（班级花名册 / 学情大屏）保持一致 */
+    .plaza-filters {
+        background: var(--om-paper);
+        border: 1px solid var(--om-border);
+        border-radius: var(--om-radius-lg);
+        padding: 1rem 1.25rem;
+        margin-bottom: 1.25rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: center;
+    }
+    .plaza-filters input,
+    .plaza-filters select {
+        padding: 0.4rem 0.75rem;
+        border: 1px solid var(--om-border-strong);
+        border-radius: var(--om-radius);
+        font-size: 0.9rem;
+        background: var(--om-paper);
+        color: var(--om-ink);
+        font-family: inherit;
+    }
+    .plaza-filters input { flex: 1 1 200px; min-width: 180px; }
+    .plaza-stats {
+        font-size: 0.82rem;
+        color: var(--om-muted);
+        margin-left: auto;
+    }
+    .plaza-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 1rem;
+    }
+    .plaza-card {
+        background: var(--om-paper);
+        border: 1px solid var(--om-border);
+        border-radius: var(--om-radius-lg);
+        padding: 1.1rem 1.25rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+        transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .plaza-card:hover {
+        border-color: var(--om-clay);
+        box-shadow: 0 4px 14px rgba(217, 119, 87, 0.12);
+    }
+    .plaza-card .title {
+        margin: 0;
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: var(--om-ink);
+        line-height: 1.35;
+    }
+    .plaza-card .desc {
+        margin: 0;
+        font-size: 0.88rem;
+        color: var(--om-muted);
+        line-height: 1.55;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+    .plaza-card .tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.3rem;
+    }
+    .plaza-card .tag {
+        font-size: 0.72rem;
+        padding: 0.15rem 0.55rem;
+        border-radius: 999px;
+        background: var(--om-clay-soft);
+        color: var(--om-clay-deep, var(--om-clay));
+        font-weight: 500;
+    }
+    .plaza-card .tag.grade { background: var(--om-cream-warm); color: var(--om-ink-soft); }
+    .plaza-card .tag.purpose { background: var(--om-success-soft); color: var(--om-success); }
+    .plaza-card .meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.78rem;
+        color: var(--om-subtle);
+        margin-top: auto;
+        padding-top: 0.6rem;
+        border-top: 1px dashed var(--om-divider);
+    }
+    .plaza-card .meta .author { color: var(--om-muted); font-weight: 500; }
+    .plaza-card .actions {
+        display: flex;
+        gap: 0.4rem;
+        margin-top: 0.4rem;
+    }
+    .plaza-card .actions button {
+        flex: 1;
+        padding: 0.4rem 0.6rem;
+        border: 1px solid var(--om-border-strong);
+        background: var(--om-paper);
+        color: var(--om-ink);
+        border-radius: var(--om-radius);
+        font-size: 0.85rem;
+        font-family: inherit;
+        cursor: pointer;
+        transition: all 0.15s;
+    }
+    .plaza-card .actions button:hover {
+        border-color: var(--om-ink);
+        background: var(--om-cream-warm);
+    }
+    .plaza-card .actions button.primary {
+        background: var(--om-clay);
+        color: white;
+        border-color: var(--om-clay);
+        font-weight: 600;
+    }
+    .plaza-card .actions button.primary:hover {
+        background: var(--om-clay-hover);
+        border-color: var(--om-clay-hover);
+    }
+    .plaza-empty, .plaza-loading {
+        text-align: center;
+        padding: 3rem 1rem;
+        color: var(--om-muted);
+        font-size: 0.95rem;
+    }
+    /* 详情浮窗 */
+    .plaza-modal {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(20, 17, 12, 0.55);
+        z-index: 1100;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+        overflow-y: auto;
+    }
+    .plaza-modal.is-open { display: flex; }
+    .plaza-modal-dialog {
+        background: var(--om-paper);
+        border: 1px solid var(--om-border);
+        border-radius: var(--om-radius-lg);
+        max-width: 720px;
+        width: 100%;
+        max-height: 92vh;
+        overflow-y: auto;
+        padding: 1.5rem 1.75rem;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.18);
+    }
+    .plaza-modal h3 { margin: 0 0 0.25rem; font-size: 1.2rem; font-weight: 700; color: var(--om-ink); }
+    .plaza-modal .meta-line { color: var(--om-muted); font-size: 0.85rem; margin: 0 0 1rem; }
+    .plaza-modal pre.prompt {
+        background: var(--om-cream-soft);
+        border: 1px solid var(--om-border);
+        border-radius: var(--om-radius);
+        padding: 0.875rem 1rem;
+        max-height: 360px;
+        overflow-y: auto;
+        font-family: var(--om-font-mono);
+        font-size: 0.85rem;
+        white-space: pre-wrap;
+        word-break: break-word;
+        line-height: 1.6;
+        color: var(--om-ink);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width: 1200px;">
+
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <div>
+            <h2 class="mb-1" style="font-family: var(--om-font-serif); font-weight: 500; color: var(--om-ink); letter-spacing: -0.01em;">导师广场</h2>
+            <p class="mb-0 text-muted small">浏览全国老师分享的 AI 导师，一键克隆到自己的库里直接使用</p>
+        </div>
+    </div>
+
+    <div class="plaza-filters">
+        <select id="filter-subject">
+            <option value="">全部学科</option>
+            {% for s in preset_subjects %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+        </select>
+        <select id="filter-grade">
+            <option value="">全部学段</option>
+            {% for g in preset_grades %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
+        </select>
+        <input type="search" id="filter-q" placeholder="🔍 搜索标题 / 描述 / 用途 / 创建者" autocomplete="off">
+        <span class="plaza-stats" id="plaza-stats">加载中…</span>
+    </div>
+
+    <div id="plaza-grid" class="plaza-grid">
+        <div class="plaza-loading">正在拉取广场数据…</div>
+    </div>
+
+</div>
+
+<!-- 详情浮窗 -->
+<div id="plaza-modal" class="plaza-modal">
+    <div class="plaza-modal-dialog">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.5rem;">
+            <div>
+                <h3 id="pm-title">—</h3>
+                <p class="meta-line" id="pm-meta">—</p>
+            </div>
+            <button type="button" id="pm-close" style="background:transparent; border:none; font-size:1.5rem; color:var(--om-muted); cursor:pointer; padding:0 0.25rem;">×</button>
+        </div>
+
+        <div id="pm-tags" class="tags" style="display:flex; gap:0.3rem; flex-wrap:wrap; margin-bottom:0.75rem;"></div>
+
+        <p style="color:var(--om-ink-soft); font-size:0.92rem; margin:0 0 0.75rem; line-height:1.6;" id="pm-desc"></p>
+
+        <div style="font-size:0.85rem; color:var(--om-muted); margin-bottom:0.5rem;">系统提示词（可参考、可一键克隆后修改）：</div>
+        <pre class="prompt" id="pm-prompt"></pre>
+
+        <div style="font-size:0.78rem; color:var(--om-subtle); margin-top:0.6rem;" id="pm-extra"></div>
+
+        <div style="display:flex; gap:0.5rem; justify-content:flex-end; margin-top:1rem;">
+            <button type="button" id="pm-cancel" class="btn btn-secondary" style="background:#6B6760; border:none;">关闭</button>
+            <button type="button" id="pm-clone" class="btn btn-primary" style="background:var(--om-clay); border:none;"><i class="bi bi-cloud-download"></i> 克隆到我的库</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const PLAZA_API_URL = {{ plaza_api_url | tojson }};
+    const PRESET_SUBJECTS = {{ preset_subjects | tojson }};
+    const PRESET_GRADES = {{ preset_grades | tojson }};
+
+    const grid = document.getElementById('plaza-grid');
+    const stats = document.getElementById('plaza-stats');
+    const filterSubject = document.getElementById('filter-subject');
+    const filterGrade = document.getElementById('filter-grade');
+    const filterQ = document.getElementById('filter-q');
+
+    const modal = document.getElementById('plaza-modal');
+    const pmTitle = document.getElementById('pm-title');
+    const pmMeta = document.getElementById('pm-meta');
+    const pmTags = document.getElementById('pm-tags');
+    const pmDesc = document.getElementById('pm-desc');
+    const pmPrompt = document.getElementById('pm-prompt');
+    const pmExtra = document.getElementById('pm-extra');
+    const pmClose = document.getElementById('pm-close');
+    const pmCancel = document.getElementById('pm-cancel');
+    const pmClone = document.getElementById('pm-clone');
+
+    let allItems = [];
+    let currentItem = null;
+
+    function escapeHtml(s) {
+        return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    async function loadPlaza() {
+        try {
+            const resp = await fetch(PLAZA_API_URL + '/all');
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            const data = await resp.json();
+            allItems = (data.submissions || []).filter(it => it && it.config && it.config.title);
+            // 按分享时间倒序
+            allItems.sort((a, b) => (b.shared_at || '').localeCompare(a.shared_at || ''));
+            render();
+        } catch (e) {
+            grid.innerHTML = '<div class="plaza-empty">😢 拉取广场数据失败：' + escapeHtml(e.message || e) + '</div>';
+            stats.textContent = '';
+        }
+    }
+
+    function render() {
+        const subject = filterSubject.value;
+        const grade = filterGrade.value;
+        const q = (filterQ.value || '').trim().toLowerCase();
+
+        const filtered = allItems.filter(it => {
+            if (subject && it.subject !== subject) return false;
+            if (grade && it.grade !== grade) return false;
+            if (q) {
+                const hay = (
+                    (it.config.title || '') + ' ' +
+                    (it.description || it.config.description || '') + ' ' +
+                    (it.purpose || '') + ' ' +
+                    (it.nickname || '') + ' ' +
+                    (it.school || '')
+                ).toLowerCase();
+                if (!hay.includes(q)) return false;
+            }
+            return true;
+        });
+
+        stats.textContent = `共 ${allItems.length} 个 · 当前显示 ${filtered.length}`;
+
+        if (filtered.length === 0) {
+            grid.innerHTML = '<div class="plaza-empty">空空如也，换个筛选条件试试，或者你来分享第一个 AI 导师 →</div>';
+            return;
+        }
+
+        grid.innerHTML = filtered.map((it, idx) => {
+            const cfg = it.config || {};
+            const desc = it.description || cfg.description || '（这位老师没填描述）';
+            const author = it.nickname && it.nickname !== '匿名'
+                ? (it.school ? `${escapeHtml(it.nickname)} · ${escapeHtml(it.school)}` : escapeHtml(it.nickname))
+                : '<span style="opacity:0.7;">匿名分享</span>';
+            return `
+                <div class="plaza-card">
+                    <h3 class="title">${escapeHtml(cfg.title)}</h3>
+                    <p class="desc">${escapeHtml(desc)}</p>
+                    <div class="tags">
+                        <span class="tag">${escapeHtml(it.subject || '')}</span>
+                        <span class="tag grade">${escapeHtml(it.grade || '')}</span>
+                        <span class="tag purpose">${escapeHtml(it.purpose || '')}</span>
+                    </div>
+                    <div class="meta">
+                        <span class="author">${author}</span>
+                        <span>${escapeHtml((it.shared_at || '').slice(0, 10))}</span>
+                    </div>
+                    <div class="actions">
+                        <button type="button" data-idx="${idx}" class="om-detail">查看完整</button>
+                        <button type="button" data-idx="${idx}" class="primary om-clone"><i class="bi bi-cloud-download"></i> 克隆到我的库</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        grid.querySelectorAll('.om-detail').forEach(btn => {
+            btn.addEventListener('click', () => openDetail(filtered[parseInt(btn.dataset.idx, 10)]));
+        });
+        grid.querySelectorAll('.om-clone').forEach(btn => {
+            btn.addEventListener('click', () => doClone(filtered[parseInt(btn.dataset.idx, 10)], btn));
+        });
+    }
+
+    function openDetail(it) {
+        currentItem = it;
+        const cfg = it.config || {};
+        pmTitle.textContent = cfg.title || '未命名';
+        const author = it.nickname && it.nickname !== '匿名'
+            ? (it.school ? `${it.nickname} · ${it.school}` : it.nickname)
+            : '匿名分享';
+        pmMeta.textContent = `${author} · ${(it.shared_at || '').slice(0, 16)}`;
+        pmTags.innerHTML = `
+            <span class="tag" style="background:var(--om-clay-soft); color:var(--om-clay-deep, var(--om-clay)); padding:0.15rem 0.55rem; border-radius:999px; font-size:0.72rem;">${escapeHtml(it.subject || '')}</span>
+            <span class="tag" style="background:var(--om-cream-warm); color:var(--om-ink-soft); padding:0.15rem 0.55rem; border-radius:999px; font-size:0.72rem;">${escapeHtml(it.grade || '')}</span>
+            <span class="tag" style="background:var(--om-success-soft); color:var(--om-success); padding:0.15rem 0.55rem; border-radius:999px; font-size:0.72rem;">${escapeHtml(it.purpose || '')}</span>
+        `;
+        pmDesc.textContent = it.description || cfg.description || '（这位老师没填描述）';
+        pmPrompt.textContent = cfg.system_prompt || '（缺失）';
+        pmExtra.innerHTML = `
+            推荐模型：${escapeHtml(cfg.selected_model_name || '—')}
+            · 学生欢迎语：${cfg.welcome_message ? escapeHtml(cfg.welcome_message.slice(0, 40)) + (cfg.welcome_message.length > 40 ? '…' : '') : '（无）'}
+            · 多模态：${cfg.allow_image_input ? '图' : ''}${cfg.allow_file_upload ? '文档' : ''}${cfg.allow_image_generation ? 'AI生图' : ''}
+            · 每日上限：${cfg.max_messages_per_student_daily || 50} 条
+        `;
+        modal.classList.add('is-open');
+    }
+
+    function closeDetail() {
+        modal.classList.remove('is-open');
+        currentItem = null;
+    }
+
+    async function doClone(it, btnEl) {
+        if (!it || !it.config) { alert('数据无效'); return; }
+        if (btnEl) {
+            btnEl.disabled = true;
+            const orig = btnEl.innerHTML;
+            btnEl.innerHTML = '<i class="bi bi-hourglass-split"></i> 克隆中…';
+            setTimeout(() => { if (btnEl.disabled) btnEl.innerHTML = orig; }, 30000); // safety reset
+        }
+        try {
+            const resp = await fetch('/api/plaza/clone', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({config: it.config}),
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok || !data.success) {
+                alert(data.message || ('克隆失败 HTTP ' + resp.status));
+                if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '<i class="bi bi-cloud-download"></i> 克隆到我的库'; }
+                return;
+            }
+            // 成功：跳到新克隆出的导师详情页
+            location.href = data.redirect_url || '/assistant/list';
+        } catch (e) {
+            alert('请求失败：' + (e.message || e));
+            if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '<i class="bi bi-cloud-download"></i> 克隆到我的库'; }
+        }
+    }
+
+    pmClose.addEventListener('click', closeDetail);
+    pmCancel.addEventListener('click', closeDetail);
+    pmClone.addEventListener('click', () => doClone(currentItem, pmClone));
+    modal.addEventListener('click', e => { if (e.target === modal) closeDetail(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && modal.classList.contains('is-open')) closeDetail(); });
+
+    filterSubject.addEventListener('change', render);
+    filterGrade.addEventListener('change', render);
+    filterQ.addEventListener('input', render);
+
+    loadPlaza();
+})();
+</script>
+{% endblock %}
