@@ -8,6 +8,11 @@
 <!-- 引入highlight.js用于代码高亮 -->
 <link rel="stylesheet" href="{{ url_for('static', filename='vendor/highlight.js/styles/github.min.css') }}">
 <script src="{{ url_for('static', filename='vendor/highlight.js/highlight.min.js') }}"></script>
+<!-- 引入KaTeX用于数学/化学公式渲染 -->
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/katex/katex.min.css') }}">
+<script defer src="{{ url_for('static', filename='vendor/katex/katex.min.js') }}"></script>
+<script defer src="{{ url_for('static', filename='vendor/katex/contrib/mhchem.min.js') }}"></script>
+<script defer src="{{ url_for('static', filename='vendor/katex/contrib/auto-render.min.js') }}"></script>
 <style>
     .analysis-option {
         border: 2px solid #E5E0D8;
@@ -281,6 +286,20 @@
             });
             
             markdownContainer.innerHTML = marked.parse(reportContent.textContent);
+            if (window.renderMathInElement) {
+                try {
+                    window.renderMathInElement(markdownContainer, {
+                        delimiters: [
+                            {left: '$$', right: '$$', display: true},
+                            {left: '$',  right: '$',  display: false},
+                            {left: '\\(', right: '\\)', display: false},
+                            {left: '\\[', right: '\\]', display: true},
+                        ],
+                        throwOnError: false,
+                        ignoredTags: ['pre', 'code', 'script', 'noscript', 'style', 'textarea'],
+                    });
+                } catch (e) { /* 公式渲染失败安静吞掉 */ }
+            }
             hljs.highlightAll();
         }
     });

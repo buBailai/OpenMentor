@@ -24,6 +24,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-icons/bootstrap-icons.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/highlight.js/styles/github.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/katex/katex.min.css') }}">
     <style>
         :root {
             --om-cream: #F0EEE6;
@@ -391,6 +392,9 @@
     <!-- 依赖 -->
     <script src="{{ url_for('static', filename='vendor/marked/marked.min.js') }}"></script>
     <script src="{{ url_for('static', filename='vendor/highlight.js/highlight.min.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='vendor/katex/katex.min.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='vendor/katex/contrib/mhchem.min.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='vendor/katex/contrib/auto-render.min.js') }}"></script>
 
     <script>
     (function () {
@@ -444,6 +448,24 @@
             if (!window.marked) return escapeHtml(text);
             return marked.parse(text);
         }
+        // KaTeX 数学公式渲染选项（不污染代码块；公式错误时显示原文不抛异常）
+        const KATEX_OPTIONS = {
+            delimiters: [
+                {left: '$$', right: '$$', display: true},
+                {left: '$',  right: '$',  display: false},
+                {left: '\\(', right: '\\)', display: false},
+                {left: '\\[', right: '\\]', display: true},
+            ],
+            throwOnError: false,
+            ignoredTags: ['pre', 'code', 'script', 'noscript', 'style', 'textarea'],
+        };
+        // 渲染 markdown + 数学公式到 element（用这个替代直接 .innerHTML = renderMarkdown(...)）
+        function renderInto(element, text) {
+            element.innerHTML = renderMarkdown(text);
+            if (window.renderMathInElement) {
+                try { renderMathInElement(element, KATEX_OPTIONS); } catch (e) { /* 公式渲染失败时安静吞掉，原文已展示 */ }
+            }
+        }
         function escapeHtml(s) {
             return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
         }
@@ -482,7 +504,7 @@
             if (role === 'system') {
                 bubble.textContent = content;
             } else {
-                bubble.innerHTML = renderMarkdown(content);
+                renderInto(bubble, content);
             }
 
             // 附件渲染（图片缩略图 / 文件链接）
@@ -938,13 +960,17 @@
             try { payload = JSON.parse(data); } catch { return; }
             if (event === 'delta' && payload.content && currentAssistantBubble) {
                 currentAssistantText += payload.content;
-                currentAssistantBubble.innerHTML = renderMarkdown(currentAssistantText);
+                renderInto(currentAssistantBubble, currentAssistantText);
                 scrollToBottom();
             } else if (event === 'error') {
                 if (currentAssistantBubble) {
                     currentAssistantBubble.classList.remove('typing-dot');
-                    currentAssistantBubble.innerHTML = renderMarkdown(currentAssistantText || '') +
-                        `<div style="margin-top:0.5rem; padding:0.4rem 0.625rem; background:#F2DCD9; color:#7A2A26; border-radius:6px; font-size:0.85rem;"><i class="bi bi-exclamation-triangle"></i> ${escapeHtml(payload.message || '生成失败')}</div>`;
+                    // 错误提示横幅追加在已渲染的内容下方
+                    renderInto(currentAssistantBubble, currentAssistantText || '');
+                    const errBanner = document.createElement('div');
+                    errBanner.style.cssText = 'margin-top:0.5rem; padding:0.4rem 0.625rem; background:#F2DCD9; color:#7A2A26; border-radius:6px; font-size:0.85rem;';
+                    errBanner.innerHTML = `<i class="bi bi-exclamation-triangle"></i> ${escapeHtml(payload.message || '生成失败')}`;
+                    currentAssistantBubble.appendChild(errBanner);
                 }
             } else if (event === 'done' && payload.message_id && currentAssistantBubble && currentAssistantText) {
                 // 流结束，给本条 AI 消息附加评分按钮

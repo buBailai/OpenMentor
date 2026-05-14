@@ -473,11 +473,13 @@
         return {
             updateContent(md) {
                 bodyEl.innerHTML = (window.marked && window.marked.parse) ? window.marked.parse(md) : ('<pre style="white-space:pre-wrap;">' + escapeHtml(md) + '</pre>');
+                window.OM_renderMath && window.OM_renderMath(bodyEl);
                 bodyEl.scrollTop = bodyEl.scrollHeight;
             },
             subtitle(t) { subEl.textContent = t; },
             finalize(md, filename) {
                 bodyEl.innerHTML = (window.marked && window.marked.parse) ? window.marked.parse(md) : ('<pre style="white-space:pre-wrap;">' + escapeHtml(md) + '</pre>');
+                window.OM_renderMath && window.OM_renderMath(bodyEl);
                 footerEl.innerHTML = '';
                 var copyBtn = document.createElement('button');
                 copyBtn.type = 'button'; copyBtn.className = 'btn btn-secondary btn-sm';
@@ -633,6 +635,7 @@
         document.body.appendChild(wrap);
         var bodyEl = document.getElementById('om-report-body');
         bodyEl.innerHTML = (window.marked && window.marked.parse) ? window.marked.parse(opts.markdown) : ('<pre style="white-space:pre-wrap;">' + escapeHtml(opts.markdown) + '</pre>');
+        window.OM_renderMath && window.OM_renderMath(bodyEl);
         document.getElementById('om-report-close').onclick = () => wrap.remove();
         wrap.addEventListener('click', e => { if (e.target === wrap) wrap.remove(); });
         document.getElementById('om-report-copy').onclick = function () {
@@ -653,5 +656,22 @@
     setInterval(refresh, 8000);
 })();
 </script>
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/katex/katex.min.css') }}">
 <script src="{{ url_for('static', filename='vendor/marked/marked.min.js') }}"></script>
+<script defer src="{{ url_for('static', filename='vendor/katex/katex.min.js') }}"></script>
+<script defer src="{{ url_for('static', filename='vendor/katex/contrib/mhchem.min.js') }}"></script>
+<script defer src="{{ url_for('static', filename='vendor/katex/contrib/auto-render.min.js') }}"></script>
+<script>
+window.OM_KATEX_OPTIONS = window.OM_KATEX_OPTIONS || {
+    delimiters: [
+        {left: '$$', right: '$$', display: true},
+        {left: '$',  right: '$',  display: false},
+        {left: '\\(', right: '\\)', display: false},
+        {left: '\\[', right: '\\]', display: true},
+    ],
+    throwOnError: false,
+    ignoredTags: ['pre', 'code', 'script', 'noscript', 'style', 'textarea'],
+};
+window.OM_renderMath = function(el){ if (window.renderMathInElement && el) { try { window.renderMathInElement(el, window.OM_KATEX_OPTIONS); } catch(e){} } };
+</script>
 {% endblock %}
