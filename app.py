@@ -67,28 +67,35 @@ def get_app_name():
     return APP_NAME
 
 
+_OM_VERSION_CACHE = {'mtime': 0, 'value': '1.2.1'}
+
 def _parse_latest_version_from_changelog():
-    """从 CHANGELOG.md 解析最新发布版本号（跳过 [Unreleased]），失败回退到 '1.2.0'。
-    用作 footer / 全局版本号显示的 source of truth：每次发版只需新增一段 ## [X.Y.Z]。"""
+    """从 CHANGELOG.md 解析最新发布版本号（跳过 [Unreleased]），失败回退到上次缓存值。
+    用作 footer / 全局版本号显示的 source of truth：每次发版只需新增一段 ## [X.Y.Z]。
+    按 mtime 缓存，避免每次请求都做无用 IO；CHANGELOG 一改，下次请求即生效，无需重启服务。"""
     cl_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'CHANGELOG.md')
     try:
+        m_time = os.path.getmtime(cl_path)
+        if m_time == _OM_VERSION_CACHE['mtime']:
+            return _OM_VERSION_CACHE['value']
         with open(cl_path, 'r', encoding='utf-8') as f:
             for line in f:
                 m = re.match(r'^##\s*\[(\d+\.\d+\.\d+)\]', line.strip())
                 if m:
+                    _OM_VERSION_CACHE['mtime'] = m_time
+                    _OM_VERSION_CACHE['value'] = m.group(1)
                     return m.group(1)
-    except Exception as e:
-        # 启动时可能 logger 还没就绪，安静回退
+        # 文件读完没找到 → 缓存 mtime 防反复扫
+        _OM_VERSION_CACHE['mtime'] = m_time
+    except Exception:
         pass
-    return '1.2.0'
-
-OPENMENTOR_VERSION = _parse_latest_version_from_changelog()
+    return _OM_VERSION_CACHE['value']
 
 
 @app.context_processor
 def _inject_om_version():
-    """让所有模板都能用 {{ om_version }} 拿到最新版本号"""
-    return {'om_version': OPENMENTOR_VERSION}
+    """让所有模板都能用 {{ om_version }} 拿到最新版本号；动态读 CHANGELOG，改后无需重启"""
+    return {'om_version': _parse_latest_version_from_changelog()}
 
 # 用于存储分析任务进度的字典（在生产环境中应使用Redis等）
 analysis_progress = {}

@@ -91,8 +91,20 @@
         </div>
     </div>
 
-    <!-- v1.2.1 -->
+    <!-- v1.2.2 -->
     <div class="release latest">
+        <div class="release-head">
+            <span class="release-version">v1.2.2</span>
+            <span class="release-date">2026-05-15</span>
+        </div>
+        <p class="release-tagline">修复版本号自动跟随的 bug</p>
+        <ul class="feat-list">
+            <li><strong>修复</strong>：v1.2.1 加的「页脚版本号自动跟随 CHANGELOG」原本不生效（启动时缓存了常量），现已改为**按 CHANGELOG.md 修改时间缓存的动态读取**——改 CHANGELOG 后下次请求即生效，无需重启服务</li>
+        </ul>
+    </div>
+
+    <!-- v1.2.1 -->
+    <div class="release">
         <div class="release-head">
             <span class="release-version">v1.2.1</span>
             <span class="release-date">2026-05-15</span>

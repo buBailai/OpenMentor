@@ -4,7 +4,7 @@
 
 ## 零、最快：Windows 免安装包（推荐 Windows 用户）
 
-Windows 系统下下载 `OpenMentor_V1.2.1_免安装包.zip`，解压后**直接双击 `OpenMentor启动器.bat`** 即可自动安装依赖并运行项目，无需手动装 Python 或 pip。
+Windows 系统下下载 `OpenMentor_V1.2.2_免安装包.zip`，解压后**直接双击 `OpenMentor启动器.bat`** 即可自动安装依赖并运行项目，无需手动装 Python 或 pip。
 
 ![解压后双击 OpenMentor启动器.bat](./docs/images/screenshot-launcher-bat.png)
 
@@ -26,7 +26,7 @@ Windows 系统下下载 `OpenMentor_V1.2.1_免安装包.zip`，解压后**直接
 
 ## 零·五、推荐：用 AI Agent 辅助一键部署（适合下载纯代码版本）
 
-如果你下载的是**纯代码版本**（`OpenMentor_V1.2.1.zip` 或源码），又不熟悉 Python / 终端命令，可以让 AI Agent 帮你完成全部安装和启动工作：
+如果你下载的是**纯代码版本**（`OpenMentor_V1.2.2.zip` 或源码），又不熟悉 Python / 终端命令，可以让 AI Agent 帮你完成全部安装和启动工作：
 
 1. 从 [GitHub Releases](https://github.com/buBailai/OpenMentor/releases) 下载最新版 zip 并解压到任意安装盘下，例如：
    - Windows：`D:\OpenMentor`
