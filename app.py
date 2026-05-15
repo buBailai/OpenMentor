@@ -66,6 +66,30 @@ Base = declarative_base()
 def get_app_name():
     return APP_NAME
 
+
+def _parse_latest_version_from_changelog():
+    """从 CHANGELOG.md 解析最新发布版本号（跳过 [Unreleased]），失败回退到 '1.2.0'。
+    用作 footer / 全局版本号显示的 source of truth：每次发版只需新增一段 ## [X.Y.Z]。"""
+    cl_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'CHANGELOG.md')
+    try:
+        with open(cl_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                m = re.match(r'^##\s*\[(\d+\.\d+\.\d+)\]', line.strip())
+                if m:
+                    return m.group(1)
+    except Exception as e:
+        # 启动时可能 logger 还没就绪，安静回退
+        pass
+    return '1.2.0'
+
+OPENMENTOR_VERSION = _parse_latest_version_from_changelog()
+
+
+@app.context_processor
+def _inject_om_version():
+    """让所有模板都能用 {{ om_version }} 拿到最新版本号"""
+    return {'om_version': OPENMENTOR_VERSION}
+
 # 用于存储分析任务进度的字典（在生产环境中应使用Redis等）
 analysis_progress = {}
 analysis_results = {}

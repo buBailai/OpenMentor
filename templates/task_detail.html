@@ -129,7 +129,23 @@
                         <button class="btn" style="background-color: #F7F4EC; color: #2D2A24; font-weight: 500; border-radius: 8px;" onclick="copyToClipboard('simple-instruction')">复制</button>
                     </div>
                 </div>
-                
+
+                <div class="mb-4">
+                    <strong class="d-block mb-2">参考提示词 · 带附件提交版（点击复制）：</strong>
+                    <div class="input-group">
+                        <input type="text" class="form-control" readonly value='创建带附件上传的 HTML 表单 → form 设 method="POST" 和 enctype="multipart/form-data"，附件用 <input type="file" name="字段名">；用 fetch + new FormData(form) 提交到 "{{ request.host_url }}api/{{ task.task_id }}"，不要手动设 Content-Type' id="attachment-instruction" style="border-radius: 8px;">
+                        <button class="btn" style="background-color: #F7F4EC; color: #2D2A24; font-weight: 500; border-radius: 8px;" onclick="copyToClipboard('attachment-instruction')">复制</button>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <strong class="d-block mb-2">参考提示词 · 打开服务器本地文件夹版（点击复制）：</strong>
+                    <div class="input-group">
+                        <input type="text" class="form-control" readonly value='想给附件加「📁 打开服务器文件夹」按钮（自部署场景免下载直接看）→ 发 POST 到 "{{ request.host_url }}attachment/reveal"，body 用 FormData 设 path=附件 url 去掉开头的 /（例：static/uploads/quickform/.../xxx.png）；会在跑 OpenMentor 那台电脑上弹出 Finder / 资源管理器并高亮该文件' id="reveal-instruction" style="border-radius: 8px;">
+                        <button class="btn" style="background-color: #F7F4EC; color: #2D2A24; font-weight: 500; border-radius: 8px;" onclick="copyToClipboard('reveal-instruction')">复制</button>
+                    </div>
+                </div>
+
                 <div class="mb-4">
                     <strong class="d-block mb-2">💡 数据接口（API）说明：</strong>
                     <span style="color: #6B6760;">访问下方 URL，即GET方式即可查看已收集的数据；制作实时统计页面时可向大模型提供该 URL 及数据样例。<br>点击这里<a href="{{ request.host_url }}api/{{ task.task_id }}" target="_blank">{{ request.host_url }}api/{{ task.task_id }}</a>可以看到全部已经回收的数据。</span>
