@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>移动控制台 - {{ get_app_name() }}</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='openmentor_logo.png') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-icons/bootstrap-icons.min.css') }}">
+    <style>
+        :root {
+            --bg: #F0EEE6;
+            --paper: #FFFFFF;
+            --ink: #141413;
+            --muted: #6B6760;
+            --line: #E5E0D8;
+            --soft: #F7F4EC;
+            --danger: #B8463E;
+            --success: #5B7553;
+            --clay: #D97757;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--ink);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            line-height: 1.5;
+        }
+        .mobile-shell {
+            width: min(100%, 560px);
+            margin: 0 auto;
+            min-height: 100vh;
+            padding: env(safe-area-inset-top) 14px calc(20px + env(safe-area-inset-bottom));
+        }
+        .mobile-header {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 14px 0 12px;
+            background: color-mix(in srgb, var(--bg) 92%, transparent);
+            backdrop-filter: blur(14px);
+        }
+        h1 {
+            margin: 0;
+            font-size: 1.35rem;
+            letter-spacing: 0;
+        }
+        .subtitle {
+            margin: 2px 0 0;
+            color: var(--muted);
+            font-size: 0.86rem;
+        }
+        .icon-link, .refresh-btn {
+            width: 38px;
+            height: 38px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            background: var(--paper);
+            color: var(--ink);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            font-size: 1rem;
+        }
+        .refresh-btn { cursor: pointer; }
+        .summary-strip {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin: 6px 0 12px;
+        }
+        .summary-item {
+            background: var(--paper);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 10px;
+        }
+        .summary-value {
+            font-size: 1.25rem;
+            font-weight: 800;
+            line-height: 1.1;
+        }
+        .summary-label {
+            margin-top: 3px;
+            color: var(--muted);
+            font-size: 0.76rem;
+        }
+        .assistant-list {
+            display: grid;
+            gap: 10px;
+        }
+        .assistant-card {
+            display: block;
+            background: var(--paper);
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            padding: 14px;
+            color: inherit;
+            text-decoration: none;
+            box-shadow: 0 1px 4px rgba(20, 17, 12, 0.04);
+        }
+        .card-top {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 10px;
+        }
+        .assistant-title {
+            margin: 0;
+            font-size: 1.04rem;
+            font-weight: 800;
+        }
+        .assistant-desc {
+            margin: 4px 0 0;
+            color: var(--muted);
+            font-size: 0.82rem;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .badge {
+            flex: 0 0 auto;
+            border-radius: 999px;
+            padding: 4px 9px;
+            font-size: 0.74rem;
+            font-weight: 800;
+        }
+        .badge.active { background: #E5EBDF; color: var(--success); }
+        .badge.disabled { background: #F2DCD9; color: var(--danger); }
+        .badge.expired { background: #E8E4D8; color: var(--muted); }
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 7px;
+            margin-top: 12px;
+        }
+        .metric {
+            background: var(--soft);
+            border-radius: 10px;
+            padding: 8px 6px;
+            min-width: 0;
+        }
+        .metric strong {
+            display: block;
+            font-size: 0.98rem;
+            line-height: 1.1;
+        }
+        .metric span {
+            display: block;
+            margin-top: 3px;
+            color: var(--muted);
+            font-size: 0.7rem;
+            white-space: nowrap;
+        }
+        .feature-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 11px;
+        }
+        .feature {
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            padding: 3px 8px;
+            color: var(--muted);
+            font-size: 0.72rem;
+        }
+        .feature.on { color: var(--success); border-color: rgba(91,117,83,.35); background: #E5EBDF; }
+        .empty-state {
+            background: var(--paper);
+            border: 1px dashed #C9C3B8;
+            border-radius: 14px;
+            padding: 36px 20px;
+            text-align: center;
+            color: var(--muted);
+        }
+        .empty-state i {
+            display: block;
+            font-size: 2.4rem;
+            color: #94918B;
+            margin-bottom: 10px;
+        }
+        .loading, .error {
+            padding: 24px 0;
+            color: var(--muted);
+            text-align: center;
+        }
+        .error { color: var(--danger); }
+        .last-updated {
+            margin: 12px 0 0;
+            text-align: center;
+            color: var(--muted);
+            font-size: 0.76rem;
+        }
+    </style>
+</head>
+<body>
+<main class="mobile-shell">
+    <header class="mobile-header">
+        <div>
+            <h1>移动控制台</h1>
+            <p class="subtitle" id="userLine">课堂安全遥控器</p>
+        </div>
+        <div style="display:flex; gap:8px;">
+            <button class="refresh-btn" type="button" onclick="loadAssistants()" aria-label="刷新">
+                <i class="bi bi-arrow-clockwise"></i>
+            </button>
+            <a class="icon-link" href="{{ url_for('assistant_list') }}" aria-label="返回后台">
+                <i class="bi bi-house"></i>
+            </a>
+        </div>
+    </header>
+
+    <section class="summary-strip" aria-label="总体概览">
+        <div class="summary-item">
+            <div class="summary-value" id="totalAssistants">-</div>
+            <div class="summary-label">AI 导师</div>
+        </div>
+        <div class="summary-item">
+            <div class="summary-value" id="totalStudents">-</div>
+            <div class="summary-label">学生</div>
+        </div>
+        <div class="summary-item">
+            <div class="summary-value" id="totalAlerts">-</div>
+            <div class="summary-label">风险命中</div>
+        </div>
+    </section>
+
+    <section id="assistantList" class="assistant-list">
+        <div class="loading">正在读取 AI 导师...</div>
+    </section>
+    <p class="last-updated" id="lastUpdated"></p>
+</main>
+
+<script>
+function escapeHtml(text) {
+    return String(text ?? '').replace(/[&<>"']/g, s => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[s]));
+}
+
+function statusBadge(item) {
+    if (item.effective_status === 'expired') return '<span class="badge expired">已过期</span>';
+    if (item.effective_status === 'disabled') return '<span class="badge disabled">已熔断</span>';
+    return '<span class="badge active">启用中</span>';
+}
+
+function feature(label, enabled) {
+    return `<span class="feature ${enabled ? 'on' : ''}">${label}${enabled ? '开' : '关'}</span>`;
+}
+
+function renderAssistants(items) {
+    const list = document.getElementById('assistantList');
+    if (!items.length) {
+        list.innerHTML = '<div class="empty-state"><i class="bi bi-robot"></i>还没有 AI 导师</div>';
+        return;
+    }
+    list.innerHTML = items.map(item => `
+        <a class="assistant-card" href="/mobile/assistant/${item.id}">
+            <div class="card-top">
+                <div>
+                    <h2 class="assistant-title">${escapeHtml(item.title)}</h2>
+                    <p class="assistant-desc">${escapeHtml(item.description || '暂无描述')}</p>
+                </div>
+                ${statusBadge(item)}
+            </div>
+            <div class="metric-grid">
+                <div class="metric"><strong>${item.student_count}</strong><span>学生</span></div>
+                <div class="metric"><strong>${item.active_students}</strong><span>活跃</span></div>
+                <div class="metric"><strong>${item.blocked_students}</strong><span>封禁</span></div>
+                <div class="metric"><strong>${item.alert_count}</strong><span>命中</span></div>
+            </div>
+            <div class="feature-row">
+                ${feature('图片', item.allow_image_input)}
+                ${feature('文件', item.allow_file_upload)}
+                ${feature('生图', item.allow_image_generation)}
+                <span class="feature">每日 ${item.daily_limit} 条</span>
+            </div>
+        </a>
+    `).join('');
+}
+
+async function loadAssistants() {
+    const list = document.getElementById('assistantList');
+    try {
+        const res = await fetch('/api/mobile/assistants', {cache: 'no-store'});
+        const data = await res.json();
+        if (data.code !== 200) throw new Error(data.message || '读取失败');
+        const items = data.items || [];
+        document.getElementById('userLine').textContent = `${data.user.display_name} · 课堂安全遥控器`;
+        document.getElementById('totalAssistants').textContent = items.length;
+        document.getElementById('totalStudents').textContent = items.reduce((n, x) => n + (x.student_count || 0), 0);
+        document.getElementById('totalAlerts').textContent = items.reduce((n, x) => n + (x.alert_count || 0), 0);
+        renderAssistants(items);
+        document.getElementById('lastUpdated').textContent = `最后刷新：${new Date().toLocaleTimeString('zh-CN', {hour12:false})}`;
+    } catch (err) {
+        list.innerHTML = `<div class="error">${escapeHtml(err.message || '网络错误')}</div>`;
+    }
+}
+
+loadAssistants();
+setInterval(loadAssistants, 8000);
+</script>
+</body>
+</html>

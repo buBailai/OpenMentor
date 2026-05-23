@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>{{ assistant.title }} - 移动控制台</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='openmentor_logo.png') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-icons/bootstrap-icons.min.css') }}">
+    <script src="{{ url_for('static', filename='vendor/qrcodejs/qrcode.min.js') }}"></script>
+    <style>
+        :root {
+            --bg: #F0EEE6;
+            --paper: #FFFFFF;
+            --ink: #141413;
+            --muted: #6B6760;
+            --line: #E5E0D8;
+            --soft: #F7F4EC;
+            --danger: #B8463E;
+            --danger-soft: #F2DCD9;
+            --success: #5B7553;
+            --success-soft: #E5EBDF;
+            --warn: #B8860B;
+            --warn-soft: #F5EDD8;
+            --clay: #D97757;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--ink);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            line-height: 1.5;
+        }
+        button, input, textarea { font: inherit; }
+        .mobile-shell {
+            width: min(100%, 560px);
+            min-height: 100vh;
+            margin: 0 auto;
+            padding: env(safe-area-inset-top) 14px calc(22px + env(safe-area-inset-bottom));
+        }
+        .mobile-header {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 14px 0 12px;
+            background: color-mix(in srgb, var(--bg) 92%, transparent);
+            backdrop-filter: blur(14px);
+        }
+        .back-link {
+            width: 38px;
+            height: 38px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            background: var(--paper);
+            color: var(--ink);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            flex: 0 0 auto;
+        }
+        .title-wrap { min-width: 0; }
+        h1 {
+            margin: 0;
+            font-size: 1.18rem;
+            letter-spacing: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .subtitle {
+            margin: 2px 0 0;
+            color: var(--muted);
+            font-size: 0.78rem;
+        }
+        .section {
+            background: var(--paper);
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            padding: 14px;
+            margin-bottom: 12px;
+            box-shadow: 0 1px 4px rgba(20, 17, 12, 0.04);
+        }
+        .section-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .section-title h2 {
+            margin: 0;
+            font-size: 1rem;
+            letter-spacing: 0;
+        }
+        .pill {
+            border-radius: 999px;
+            padding: 4px 9px;
+            font-size: 0.73rem;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+        .pill.active { background: var(--success-soft); color: var(--success); }
+        .pill.disabled { background: var(--danger-soft); color: var(--danger); }
+        .pill.muted { background: #E8E4D8; color: var(--muted); }
+        .emergency-card {
+            background: var(--soft);
+            border-radius: 12px;
+            padding: 12px;
+        }
+        .emergency-status {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            color: var(--muted);
+            font-size: 0.88rem;
+            margin-bottom: 10px;
+        }
+        .danger-btn, .primary-btn, .ghost-btn {
+            width: 100%;
+            min-height: 44px;
+            border-radius: 999px;
+            border: 1px solid transparent;
+            font-weight: 800;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+        }
+        .danger-btn { background: var(--danger); color: #fff; }
+        .primary-btn { background: var(--ink); color: var(--bg); }
+        .ghost-btn { background: var(--paper); color: var(--ink); border-color: var(--line); }
+        .danger-btn:disabled, .primary-btn:disabled, .ghost-btn:disabled { opacity: .62; cursor: not-allowed; }
+        .metric-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 7px;
+            margin-top: 11px;
+        }
+        .metric {
+            background: var(--paper);
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 8px 5px;
+            text-align: center;
+        }
+        .metric strong { display: block; font-size: 1rem; line-height: 1.1; }
+        .metric span { display: block; margin-top: 3px; color: var(--muted); font-size: 0.68rem; }
+        .toggle-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 11px 0;
+            border-bottom: 1px solid var(--line);
+        }
+        .toggle-row:last-child { border-bottom: 0; }
+        .toggle-title { font-weight: 750; }
+        .toggle-desc { margin-top: 2px; color: var(--muted); font-size: 0.78rem; }
+        .switch {
+            position: relative;
+            width: 52px;
+            height: 30px;
+            flex: 0 0 auto;
+        }
+        .switch input { display: none; }
+        .slider {
+            position: absolute;
+            inset: 0;
+            background: #D7D1C6;
+            border-radius: 999px;
+            transition: .15s;
+        }
+        .slider::before {
+            content: "";
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            left: 3px;
+            top: 3px;
+            border-radius: 50%;
+            background: #fff;
+            box-shadow: 0 1px 3px rgba(0,0,0,.2);
+            transition: .15s;
+        }
+        .switch input:checked + .slider { background: var(--success); }
+        .switch input:checked + .slider::before { transform: translateX(22px); }
+        .limit-row {
+            display: grid;
+            grid-template-columns: 1fr 110px;
+            gap: 10px;
+            align-items: center;
+            margin-top: 12px;
+        }
+        .number-input, .text-area {
+            width: 100%;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            background: var(--paper);
+            color: var(--ink);
+            padding: 10px 11px;
+            outline: none;
+        }
+        .number-input { min-height: 42px; }
+        .text-area {
+            min-height: 74px;
+            resize: vertical;
+            font-size: 0.9rem;
+        }
+        .link-card {
+            background: var(--soft);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 12px;
+        }
+        .link-meta {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            color: var(--muted);
+            font-size: 0.84rem;
+            margin-bottom: 10px;
+        }
+        .link-meta strong { color: var(--ink); text-align: right; }
+        .qr-box {
+            display: flex;
+            justify-content: center;
+            padding: 12px;
+            border-radius: 12px;
+            background: #fff;
+            border: 1px solid var(--line);
+            margin-bottom: 10px;
+        }
+        .link-input {
+            width: 100%;
+            min-height: 42px;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            background: var(--paper);
+            color: var(--muted);
+            padding: 9px 10px;
+            outline: none;
+            font-size: 0.82rem;
+        }
+        .link-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .mini-btn {
+            min-height: 34px;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            background: var(--paper);
+            color: var(--ink);
+            font-weight: 750;
+            padding: 6px 10px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .mini-btn.danger { color: var(--danger); }
+        .mini-btn.success { color: var(--success); }
+        .alert-list, .student-list, .blacklist-list {
+            display: grid;
+            gap: 8px;
+        }
+        .alert-item, .student-item, .blacklist-item {
+            background: var(--soft);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 10px;
+        }
+        .alert-meta, .student-meta {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            color: var(--muted);
+            font-size: 0.76rem;
+            margin-bottom: 5px;
+        }
+        .alert-keyword {
+            color: var(--danger);
+            font-weight: 800;
+        }
+        .alert-content, .student-last {
+            color: var(--ink);
+            font-size: 0.86rem;
+            word-break: break-word;
+        }
+        .student-main {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            align-items: center;
+        }
+        .student-name {
+            font-weight: 850;
+            word-break: break-word;
+        }
+        .student-stats {
+            color: var(--muted);
+            font-size: 0.76rem;
+            margin-top: 3px;
+        }
+        .blacklist-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .blacklist-label { font-weight: 800; }
+        .toast {
+            position: fixed;
+            left: 14px;
+            right: 14px;
+            bottom: calc(16px + env(safe-area-inset-bottom));
+            z-index: 100;
+            max-width: 532px;
+            margin: 0 auto;
+            background: var(--ink);
+            color: var(--bg);
+            border-radius: 12px;
+            padding: 12px 14px;
+            box-shadow: 0 10px 28px rgba(20,17,12,.25);
+            transform: translateY(140%);
+            transition: transform .18s ease;
+            font-size: 0.9rem;
+        }
+        .toast.show { transform: translateY(0); }
+        .toast.risk { background: var(--danger); color: #fff; }
+        .empty {
+            color: var(--muted);
+            text-align: center;
+            padding: 18px 8px;
+            font-size: 0.86rem;
+        }
+    </style>
+</head>
+<body>
+<main class="mobile-shell">
+    <header class="mobile-header">
+        <a class="back-link" href="{{ url_for('mobile_console') }}" aria-label="返回">
+            <i class="bi bi-chevron-left"></i>
+        </a>
+        <div class="title-wrap">
+            <h1>{{ assistant.title }}</h1>
+            <p class="subtitle">{{ summary.selected_model_name }} · 每生每日 {{ summary.daily_limit }} 条</p>
+        </div>
+        <span id="statusPill" class="pill muted">读取中</span>
+    </header>
+
+    <section class="section">
+        <div class="section-title">
+            <h2>应急控制</h2>
+            <button class="mini-btn" type="button" onclick="refreshAll()">刷新</button>
+        </div>
+        <div class="emergency-card">
+            <div class="emergency-status">
+                <span>当前状态</span>
+                <strong id="statusText">读取中</strong>
+            </div>
+            <button id="emergencyBtn" class="danger-btn" type="button" onclick="toggleStatus()">
+                <i class="bi bi-shield-exclamation"></i>
+                <span>紧急熔断导师</span>
+            </button>
+            <div class="metric-row">
+                <div class="metric"><strong id="metricStudents">{{ summary.student_count }}</strong><span>学生</span></div>
+                <div class="metric"><strong id="metricActive">{{ summary.active_students }}</strong><span>活跃</span></div>
+                <div class="metric"><strong id="metricBlocked">{{ summary.blocked_students }}</strong><span>封禁</span></div>
+                <div class="metric"><strong id="metricAlerts">{{ summary.alert_count }}</strong><span>命中</span></div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="section-title">
+            <h2>学生链接</h2>
+            <span class="pill muted" id="linkStatusPill">读取中</span>
+        </div>
+        <div class="link-card">
+            <div class="link-meta">
+                <span>有效期至</span>
+                <strong id="linkExpiresAt">读取中</strong>
+            </div>
+            <div class="qr-box">
+                <div id="studentQr"></div>
+            </div>
+            <input id="studentUrl" class="link-input" type="text" readonly value="{{ summary.student_url }}">
+            <div class="link-actions">
+                <button class="ghost-btn" type="button" onclick="copyStudentUrl()">
+                    <i class="bi bi-clipboard"></i>
+                    复制链接
+                </button>
+                <a id="openStudentLink" class="ghost-btn" href="{{ summary.student_url }}" target="_blank" rel="noopener" style="text-decoration:none;">
+                    <i class="bi bi-box-arrow-up-right"></i>
+                    打开链接
+                </a>
+            </div>
+            <div class="limit-row">
+                <div>
+                    <div class="toggle-title">重置有效时长</div>
+                    <div class="toggle-desc">从现在开始重新计算，最长 168 小时</div>
+                </div>
+                <input id="linkExpiresHours" class="number-input" type="number" min="1" max="168" inputmode="numeric" value="48">
+            </div>
+            <button id="resetLinkBtn" class="primary-btn" type="button" style="margin-top:12px;" onclick="resetStudentLink()">
+                <i class="bi bi-qr-code"></i>
+                重置学生链接有效期
+            </button>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="section-title">
+            <h2>课堂开关</h2>
+        </div>
+        <div class="toggle-row">
+            <div>
+                <div class="toggle-title">图片输入</div>
+                <div class="toggle-desc">允许学生上传图片给 AI 导师分析</div>
+            </div>
+            <label class="switch">
+                <input id="allowImageInput" type="checkbox">
+                <span class="slider"></span>
+            </label>
+        </div>
+        <div class="toggle-row">
+            <div>
+                <div class="toggle-title">文件上传</div>
+                <div class="toggle-desc">允许学生上传附件或文档</div>
+            </div>
+            <label class="switch">
+                <input id="allowFileUpload" type="checkbox">
+                <span class="slider"></span>
+            </label>
+        </div>
+        <div class="toggle-row">
+            <div>
+                <div class="toggle-title">AI 生图</div>
+                <div class="toggle-desc">允许导师调用图片生成能力</div>
+            </div>
+            <label class="switch">
+                <input id="allowImageGeneration" type="checkbox">
+                <span class="slider"></span>
+            </label>
+        </div>
+        <div class="limit-row">
+            <div>
+                <div class="toggle-title">每日消息上限</div>
+                <div class="toggle-desc">临时降低上限可以快速控场</div>
+            </div>
+            <input id="dailyLimit" class="number-input" type="number" min="1" max="500" inputmode="numeric">
+        </div>
+        <button id="saveSettingsBtn" class="primary-btn" type="button" style="margin-top:12px;" onclick="saveSettings()">
+            <i class="bi bi-check2-circle"></i>
+            保存课堂开关
+        </button>
+    </section>
+
+    <section class="section">
+        <div class="section-title">
+            <h2>风险提醒</h2>
+            <span class="pill muted" id="alertPollState">自动刷新</span>
+        </div>
+        <div id="alertList" class="alert-list">
+            <div class="empty">正在读取命中记录...</div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="section-title">
+            <h2>学生控制</h2>
+            <span class="pill muted" id="studentCountPill">读取中</span>
+        </div>
+        <div id="studentList" class="student-list">
+            <div class="empty">正在读取学生列表...</div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="section-title">
+            <h2>黑名单</h2>
+        </div>
+        <div id="blacklistList" class="blacklist-list"></div>
+        <button id="saveBlacklistBtn" class="primary-btn" type="button" style="margin-top:12px;" onclick="saveBlacklist()">
+            <i class="bi bi-shield-check"></i>
+            保存黑名单
+        </button>
+    </section>
+</main>
+
+<div id="toast" class="toast"></div>
+
+<script>
+const ASSISTANT_ID = {{ assistant.id }};
+let summary = {{ summary | tojson }};
+let blacklist = {{ blocked_keywords | tojson }};
+let alertItems = [];
+let lastSeenAlertId = 0;
+let alertsBootstrapped = false;
+let studentQrText = '';
+
+function escapeHtml(text) {
+    return String(text ?? '').replace(/[&<>"']/g, s => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[s]));
+}
+
+function showToast(message, risk = false) {
+    const toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.className = `toast show${risk ? ' risk' : ''}`;
+    if (risk && navigator.vibrate) navigator.vibrate([120, 60, 120]);
+    clearTimeout(showToast.timer);
+    showToast.timer = setTimeout(() => {
+        toast.className = 'toast';
+    }, risk ? 5200 : 2200);
+}
+
+function isLinkExpired() {
+    return summary.effective_status === 'expired';
+}
+
+function renderStatus() {
+    const isActive = summary.status === 'active';
+    const expired = isLinkExpired();
+    const pill = document.getElementById('statusPill');
+    const btn = document.getElementById('emergencyBtn');
+    if (!isActive) {
+        document.getElementById('statusText').textContent = '已熔断，学生暂时无法访问';
+        pill.textContent = '已熔断';
+        pill.className = 'pill disabled';
+    } else if (expired) {
+        document.getElementById('statusText').textContent = '学生链接已过期，需要重置有效期';
+        pill.textContent = '已过期';
+        pill.className = 'pill muted';
+    } else {
+        document.getElementById('statusText').textContent = '启用中，学生可访问';
+        pill.textContent = '启用中';
+        pill.className = 'pill active';
+    }
+    btn.className = isActive ? 'danger-btn' : 'primary-btn';
+    btn.innerHTML = isActive
+        ? '<i class="bi bi-shield-exclamation"></i><span>紧急熔断导师</span>'
+        : '<i class="bi bi-play-circle"></i><span>重新启用导师</span>';
+    document.getElementById('metricStudents').textContent = summary.student_count || 0;
+    document.getElementById('metricActive').textContent = summary.active_students || 0;
+    document.getElementById('metricBlocked').textContent = summary.blocked_students || 0;
+    document.getElementById('metricAlerts').textContent = summary.alert_count || 0;
+}
+
+function renderStudentLink() {
+    const url = summary.student_url || '';
+    const expired = isLinkExpired();
+    document.getElementById('studentUrl').value = url;
+    document.getElementById('openStudentLink').href = url || '#';
+    document.getElementById('linkExpiresAt').textContent = summary.link_expires_at || '未设置';
+    const pill = document.getElementById('linkStatusPill');
+    pill.textContent = expired ? '已过期' : '有效中';
+    pill.className = `pill ${expired ? 'muted' : 'active'}`;
+    if (url && window.QRCode && studentQrText !== url) {
+        const target = document.getElementById('studentQr');
+        target.innerHTML = '';
+        new QRCode(target, {
+            text: url,
+            width: 190,
+            height: 190,
+            correctLevel: QRCode.CorrectLevel.M
+        });
+        studentQrText = url;
+    }
+}
+
+function renderSettings() {
+    document.getElementById('allowImageInput').checked = !!summary.allow_image_input;
+    document.getElementById('allowFileUpload').checked = !!summary.allow_file_upload;
+    document.getElementById('allowImageGeneration').checked = !!summary.allow_image_generation;
+    document.getElementById('dailyLimit').value = summary.daily_limit || 50;
+}
+
+async function toggleStatus() {
+    const btn = document.getElementById('emergencyBtn');
+    btn.disabled = true;
+    const nextStatus = summary.status === 'active' ? 'disabled' : 'active';
+    try {
+        const res = await fetch(`/api/mobile/assistant/${ASSISTANT_ID}/status`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({status: nextStatus})
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.message || '操作失败');
+        summary.status = data.status;
+        renderStatus();
+        renderStudentLink();
+        showToast(data.message || '已保存');
+    } catch (err) {
+        showToast(err.message || '网络错误');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+async function saveSettings() {
+    const btn = document.getElementById('saveSettingsBtn');
+    btn.disabled = true;
+    try {
+        const body = {
+            allow_image_input: document.getElementById('allowImageInput').checked,
+            allow_file_upload: document.getElementById('allowFileUpload').checked,
+            allow_image_generation: document.getElementById('allowImageGeneration').checked,
+            max_messages_per_student_daily: document.getElementById('dailyLimit').value
+        };
+        const res = await fetch(`/api/mobile/assistant/${ASSISTANT_ID}/settings`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.message || '保存失败');
+        summary = data.summary;
+        renderStatus();
+        renderSettings();
+        renderStudentLink();
+        showToast('课堂开关已保存');
+    } catch (err) {
+        showToast(err.message || '网络错误');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+function copyStudentUrl() {
+    const input = document.getElementById('studentUrl');
+    navigator.clipboard.writeText(input.value)
+        .then(() => showToast('学生链接已复制'))
+        .catch(() => {
+            input.select();
+            document.execCommand('copy');
+            showToast('学生链接已复制');
+        });
+}
+
+async function resetStudentLink() {
+    const btn = document.getElementById('resetLinkBtn');
+    btn.disabled = true;
+    try {
+        const hours = document.getElementById('linkExpiresHours').value;
+        const res = await fetch(`/api/mobile/assistant/${ASSISTANT_ID}/link`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({expires_hours: hours})
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.message || '重置失败');
+        summary = data.summary;
+        renderStatus();
+        renderStudentLink();
+        showToast(data.message || '学生链接有效期已重置');
+    } catch (err) {
+        showToast(err.message || '网络错误');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+function renderAlerts() {
+    const list = document.getElementById('alertList');
+    if (!alertItems.length) {
+        list.innerHTML = '<div class="empty">暂无黑名单命中</div>';
+        return;
+    }
+    list.innerHTML = alertItems.map(item => `
+        <article class="alert-item">
+            <div class="alert-meta">
+                <span>${escapeHtml(item.student_class)} · ${escapeHtml(item.student_name)}</span>
+                <span>${escapeHtml(item.created_at || '')}</span>
+            </div>
+            <div class="alert-keyword">命中：${escapeHtml(item.triggered_keyword)}</div>
+            <div class="alert-content">${escapeHtml(item.content || '（无内容）')}</div>
+        </article>
+    `).join('');
+}
+
+async function loadAlerts() {
+    const state = document.getElementById('alertPollState');
+    state.textContent = '刷新中';
+    try {
+        const since = alertsBootstrapped ? lastSeenAlertId : 0;
+        const res = await fetch(`/api/mobile/assistant/${ASSISTANT_ID}/alerts?since_id=${since}`, {cache: 'no-store'});
+        const data = await res.json();
+        if (data.code !== 200) throw new Error(data.message || '读取失败');
+        const items = data.items || [];
+        if (!alertsBootstrapped) {
+            alertItems = items;
+            lastSeenAlertId = data.max_id || 0;
+            alertsBootstrapped = true;
+        } else if (items.length) {
+            alertItems = [...items, ...alertItems]
+                .sort((a, b) => b.id - a.id)
+                .slice(0, 20);
+            lastSeenAlertId = Math.max(lastSeenAlertId, data.max_id || 0);
+            const first = items[0];
+            showToast(`${first.student_class} · ${first.student_name} 命中「${first.triggered_keyword}」`, true);
+            loadStudents();
+        }
+        renderAlerts();
+        state.textContent = '自动刷新';
+    } catch (err) {
+        state.textContent = '刷新失败';
+    }
+}
+
+function renderStudents(items) {
+    const list = document.getElementById('studentList');
+    document.getElementById('studentCountPill').textContent = `${items.length} 人`;
+    if (!items.length) {
+        list.innerHTML = '<div class="empty">暂无学生会话</div>';
+        return;
+    }
+    list.innerHTML = items.map(item => `
+        <article class="student-item">
+            <div class="student-main">
+                <div>
+                    <div class="student-name">${escapeHtml(item.student_class)} · ${escapeHtml(item.student_name)}</div>
+                    <div class="student-stats">
+                        ${item.msg_count || 0} 条消息 · 今日 ${item.daily_message_count || 0}/${summary.daily_limit || 50} · 命中 ${item.blocked_hits || 0}
+                    </div>
+                </div>
+                <button class="mini-btn ${item.is_blocked_any ? 'success' : 'danger'}"
+                        type="button"
+                        data-block-student="1"
+                        data-student-class="${escapeHtml(item.student_class)}"
+                        data-student-name="${escapeHtml(item.student_name)}"
+                        data-next-blocked="${item.is_blocked_any ? '0' : '1'}">
+                    ${item.is_blocked_any ? '解禁' : '封禁'}
+                </button>
+            </div>
+            ${item.last_content ? `<div class="student-last">${escapeHtml(item.last_content)}</div>` : ''}
+            <div class="student-meta" style="margin-top:6px;">
+                <span>${item.session_count || 0} 个会话</span>
+                <span>${escapeHtml(item.last_active_at || '未活跃')}</span>
+            </div>
+        </article>
+    `).join('');
+    document.querySelectorAll('[data-block-student]').forEach(btn => {
+        btn.addEventListener('click', () => setStudentBlocked(
+            btn.dataset.studentClass,
+            btn.dataset.studentName,
+            btn.dataset.nextBlocked === '1',
+            btn,
+        ));
+    });
+}
+
+async function loadStudents() {
+    try {
+        const res = await fetch(`/api/mobile/assistant/${ASSISTANT_ID}/students`, {cache: 'no-store'});
+        const data = await res.json();
+        if (data.code !== 200) throw new Error(data.message || '读取失败');
+        summary.daily_limit = data.daily_limit || summary.daily_limit;
+        renderStudents(data.items || []);
+    } catch (err) {
+        document.getElementById('studentList').innerHTML = `<div class="empty">${escapeHtml(err.message || '读取失败')}</div>`;
+    }
+}
+
+async function setStudentBlocked(studentClass, studentName, blocked, btn) {
+    btn.disabled = true;
+    try {
+        const res = await fetch(`/api/mobile/assistant/${ASSISTANT_ID}/student/block`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({student_class: studentClass, student_name: studentName, blocked})
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.message || '操作失败');
+        showToast(data.message || '已处理');
+        await refreshSummary();
+        await loadStudents();
+    } catch (err) {
+        showToast(err.message || '网络错误');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+function renderBlacklist() {
+    const list = document.getElementById('blacklistList');
+    list.innerHTML = Object.entries(blacklist).map(([key, item]) => `
+        <article class="blacklist-item" data-blacklist-key="${escapeHtml(key)}">
+            <div class="blacklist-top">
+                <span class="blacklist-label">${escapeHtml(item.label || key)}</span>
+                <label class="switch">
+                    <input type="checkbox" data-blacklist-enabled ${item.enabled ? 'checked' : ''}>
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <textarea class="text-area" data-blacklist-keywords placeholder="每行一个关键词">${escapeHtml((item.keywords || []).join('\n'))}</textarea>
+        </article>
+    `).join('');
+}
+
+async function saveBlacklist() {
+    const btn = document.getElementById('saveBlacklistBtn');
+    const categories = {};
+    document.querySelectorAll('[data-blacklist-key]').forEach(row => {
+        const key = row.dataset.blacklistKey;
+        categories[key] = {
+            enabled: row.querySelector('[data-blacklist-enabled]').checked,
+            keywords_text: row.querySelector('[data-blacklist-keywords]').value
+        };
+    });
+    btn.disabled = true;
+    try {
+        const res = await fetch(`/api/mobile/assistant/${ASSISTANT_ID}/blacklist`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({categories})
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.message || '保存失败');
+        blacklist = data.blocked_keywords;
+        renderBlacklist();
+        showToast('黑名单已保存');
+    } catch (err) {
+        showToast(err.message || '网络错误');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+async function refreshSummary() {
+    const res = await fetch('/api/mobile/assistants', {cache: 'no-store'});
+    const data = await res.json();
+    if (data.code !== 200) return;
+    const item = (data.items || []).find(x => x.id === ASSISTANT_ID);
+    if (!item) return;
+    summary = {...summary, ...item};
+    renderStatus();
+    renderSettings();
+    renderStudentLink();
+}
+
+async function refreshAll() {
+    await refreshSummary();
+    await loadAlerts();
+    await loadStudents();
+    showToast('已刷新');
+}
+
+renderStatus();
+renderSettings();
+renderStudentLink();
+renderBlacklist();
+loadAlerts();
+loadStudents();
+setInterval(loadAlerts, 5000);
+setInterval(loadStudents, 10000);
+setInterval(refreshSummary, 12000);
+</script>
+</body>
+</html>

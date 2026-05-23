@@ -91,8 +91,33 @@
         </div>
     </div>
 
-    <!-- v1.2.2 -->
+    <!-- v1.3.0 -->
     <div class="release latest">
+        <div class="release-head">
+            <span class="release-version">v1.3.0</span>
+            <span class="release-date">2026-05-23</span>
+        </div>
+        <p class="release-tagline">移动控制台 + 数据使用矩阵 + 视频演示体系</p>
+        <ul class="feat-list">
+            <li><strong>移动控制台</strong>：AI 导师列表新增「移动控制台」入口和二维码，老师可以用手机或平板打开轻量控制台，在课堂中快速查看并管理自己的全部 AI 导师。</li>
+            <li><strong>课堂应急控制</strong>：移动端支持切换图片输入、文件上传、图片生成等常用开关；支持维护黑名单分类与关键词、查看黑名单命中记录、禁用 / 解禁学生身份，以及一键熔断或重新启用某个 AI 导师。</li>
+            <li><strong>学生链接移动端管理</strong>：移动控制台中可查看学生访问链接和二维码，支持复制、投屏或转发；学生链接过期后，也可以在移动端直接重置有效时长。</li>
+            <li><strong>数据使用矩阵</strong>：数据任务详情页将原「数据提交说明」升级为卡片式「数据使用矩阵」，按「数据采集」和「数据分析」组织常用场景，页面不再直接铺开大段提示词。</li>
+            <li><strong>5 个数据任务使用场景</strong>：矩阵内置「基础提交页面」「附件采集功能」「AI 导师悬浮球功能」「基础数据大屏」「本地附件查看功能」5 张场景卡片，每张卡片都提供「查看 / 复制 / 演示」按钮。</li>
+            <li><strong>数据大屏提示词模板</strong>：新增「基础数据大屏」提示词，引导老师先提交 1-2 条测试数据，再复制数据接口返回的完整 JSON 样例，让 AI 更容易按真实字段制作实时数据大屏。</li>
+            <li><strong>AI 导师悬浮球提示词</strong>：新增可复制提示词，用于让 AI 在生成 HTML 数据采集页面时，把某个 AI 导师做成页面右下角悬浮球，学生填表时可以在小窗中同步向导师提问。</li>
+            <li><strong>提示词视频演示</strong>：数据使用矩阵的 5 个场景均已接入 B 站浮窗播放器，老师可以先看演示视频，再一键复制提示词照做。</li>
+            <li><strong>模型配置视频演示</strong>：设置页为 DeepSeek、豆包、阿里云百炼、智谱清言、硅基流动增加 API 申请 / 模型 ID 获取视频演示，帮助老师按当前官方页面找到正确配置项。</li>
+            <li><strong>模型配置说明优化</strong>：不再依赖容易过时的推荐模型文案，改为提示老师以官方平台当前模型 ID 为准，并通过视频演示学习查找方式。</li>
+            <li><strong>推荐他人使用入口</strong>：顶部导航新增推荐按钮，点击后打开 openmentor.top，并自动复制网址到剪贴板，方便老师直接分享给同事。</li>
+            <li><strong>OpenMentor Skill 入口</strong>：页脚新增 OpenMentor Skill 链接，方便需要 AI Agent 辅助部署、配置和使用的老师查看配套 Skill。</li>
+            <li><strong>复制与配置稳定性优化</strong>：提示词复制增加剪贴板 API 与传统复制兜底；保存某个模型配置时，也会尽量保留其他模型已有配置。</li>
+            <li><strong>数据安全保护</strong>：启动时增加运行数据保护检查；如果数据库缺失但上传文件或报告目录中已有数据，会停止启动并提示检查数据库，避免静默创建空库造成误解。</li>
+        </ul>
+    </div>
+
+    <!-- v1.2.2 -->
+    <div class="release">
         <div class="release-head">
             <span class="release-version">v1.2.2</span>
             <span class="release-date">2026-05-15</span>
@@ -198,7 +223,7 @@
     <div class="release">
         <div class="release-head">
             <span class="release-version">v1.0</span>
-            <span class="release-date">2026-04-30</span>
+            <span class="release-date">2026-05-06</span>
         </div>
         <p class="release-tagline">第一个完整可用版本（内部）</p>
         <ul class="feat-list">

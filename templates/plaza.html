@@ -32,6 +32,27 @@
         color: var(--om-muted);
         margin-left: auto;
     }
+    .plaza-tabs {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+        border-bottom: 1px solid var(--om-border);
+    }
+    .plaza-tab {
+        border: 1px solid transparent;
+        border-bottom: none;
+        background: transparent;
+        color: var(--om-muted);
+        padding: 0.55rem 0.9rem;
+        border-radius: var(--om-radius) var(--om-radius) 0 0;
+        font-weight: 600;
+    }
+    .plaza-tab.active {
+        background: var(--om-paper);
+        color: var(--om-ink);
+        border-color: var(--om-border);
+        transform: translateY(1px);
+    }
     .plaza-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
@@ -180,9 +201,10 @@
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <div>
             <h2 class="mb-1" style="font-family: var(--om-font-serif); font-weight: 500; color: var(--om-ink); letter-spacing: -0.01em;">导师广场</h2>
-            <p class="mb-0 text-muted small">浏览全国老师分享的 AI 导师，一键克隆到自己的库里直接使用</p>
+            <p class="mb-0 text-muted small">浏览老师分享的 AI 导师，一键克隆到自己的库里直接使用</p>
         </div>
     </div>
+
 
     <div class="plaza-filters">
         <select id="filter-subject">
@@ -225,7 +247,7 @@
 
         <div style="display:flex; gap:0.5rem; justify-content:flex-end; margin-top:1rem;">
             <button type="button" id="pm-cancel" class="btn btn-secondary" style="background:#6B6760; border:none;">关闭</button>
-            <button type="button" id="pm-clone" class="btn btn-primary" style="background:var(--om-clay); border:none;"><i class="bi bi-cloud-download"></i> 克隆到我的库</button>
+            <button type="button" id="pm-clone" class="btn btn-primary" style="background:var(--om-clay); border:none;"><i class="bi bi-cloud-download"></i> 克隆</button>
         </div>
     </div>
 </div>
@@ -237,7 +259,6 @@
     const PLAZA_API_URL = {{ plaza_api_url | tojson }};
     const PRESET_SUBJECTS = {{ preset_subjects | tojson }};
     const PRESET_GRADES = {{ preset_grades | tojson }};
-
     const grid = document.getElementById('plaza-grid');
     const stats = document.getElementById('plaza-stats');
     const filterSubject = document.getElementById('filter-subject');
@@ -256,6 +277,7 @@
     const pmClone = document.getElementById('pm-clone');
 
     let allItems = [];
+    let publicItems = [];
     let currentItem = null;
 
     function escapeHtml(s) {
@@ -267,9 +289,10 @@
             const resp = await fetch(PLAZA_API_URL + '/all');
             if (!resp.ok) throw new Error('HTTP ' + resp.status);
             const data = await resp.json();
-            allItems = (data.submissions || []).filter(it => it && it.config && it.config.title);
+            publicItems = (data.submissions || []).filter(it => it && it.config && it.config.title).map(it => ({...it, _scope: 'public'}));
             // 按分享时间倒序
-            allItems.sort((a, b) => (b.shared_at || '').localeCompare(a.shared_at || ''));
+            publicItems.sort((a, b) => (b.shared_at || '').localeCompare(a.shared_at || ''));
+            allItems = publicItems;
             render();
         } catch (e) {
             grid.innerHTML = '<div class="plaza-empty">😢 拉取广场数据失败：' + escapeHtml(e.message || e) + '</div>';
@@ -326,7 +349,7 @@
                     </div>
                     <div class="actions">
                         <button type="button" data-idx="${idx}" class="om-detail">查看完整</button>
-                        <button type="button" data-idx="${idx}" class="primary om-clone"><i class="bi bi-cloud-download"></i> 克隆到我的库</button>
+                        <button type="button" data-idx="${idx}" class="primary om-clone"><i class="bi bi-cloud-download"></i> 克隆</button>
                     </div>
                 </div>
             `;
@@ -386,14 +409,14 @@
             const data = await resp.json().catch(() => ({}));
             if (!resp.ok || !data.success) {
                 alert(data.message || ('克隆失败 HTTP ' + resp.status));
-                if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '<i class="bi bi-cloud-download"></i> 克隆到我的库'; }
+                if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '<i class="bi bi-cloud-download"></i> 克隆'; }
                 return;
             }
             // 成功：跳到新克隆出的导师详情页
             location.href = data.redirect_url || '/assistant/list';
         } catch (e) {
             alert('请求失败：' + (e.message || e));
-            if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '<i class="bi bi-cloud-download"></i> 克隆到我的库'; }
+            if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '<i class="bi bi-cloud-download"></i> 克隆'; }
         }
     }
 
@@ -406,6 +429,7 @@
     filterSubject.addEventListener('change', render);
     filterGrade.addEventListener('change', render);
     filterQ.addEventListener('input', render);
+
 
     loadPlaza();
 })();

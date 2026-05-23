@@ -2,6 +2,182 @@
 
 {% block title %}{{ task.title }} - {{ get_app_name() }}{% endblock %}
 
+{% block styles %}
+{{ super() }}
+<style>
+    .om-prompt-matrix {
+        display: grid;
+        gap: 1.25rem;
+    }
+    .om-matrix-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: flex-start;
+        margin-bottom: 1.25rem;
+    }
+    .om-matrix-title {
+        margin: 0;
+        color: var(--om-ink);
+        font-size: 1.1rem;
+        font-weight: 700;
+        letter-spacing: 0;
+    }
+    .om-matrix-subtitle {
+        margin: 0.25rem 0 0;
+        color: var(--om-muted);
+        font-size: 0.88rem;
+    }
+    .om-matrix-section-title {
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        margin-bottom: 0.7rem;
+        color: var(--om-ink);
+        font-size: 0.96rem;
+        font-weight: 800;
+    }
+    .om-matrix-section-title::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--om-clay);
+    }
+    .om-scenario-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.85rem;
+    }
+    .om-scenario-card {
+        border: 1px solid var(--om-border);
+        border-radius: 8px;
+        background: var(--om-paper);
+        padding: 1rem;
+        min-height: 122px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 0.9rem;
+        transition: border-color 0.16s ease, box-shadow 0.16s ease;
+    }
+    .om-scenario-card:hover {
+        border-color: var(--om-border-strong);
+        box-shadow: 0 2px 8px rgba(20, 17, 12, 0.06);
+    }
+    .om-scenario-name {
+        margin: 0;
+        color: var(--om-ink);
+        font-size: 1rem;
+        font-weight: 800;
+        line-height: 1.25;
+    }
+    .om-scenario-actions {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.45rem;
+    }
+    .om-scenario-actions .btn {
+        min-height: 34px;
+        padding: 0.35rem 0.55rem;
+        border-radius: 999px !important;
+        font-size: 0.84rem;
+        white-space: nowrap;
+    }
+    .om-prompt-source {
+        position: absolute;
+        left: -9999px;
+        top: auto;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+    }
+    .om-prompt-modal {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 1210;
+        background: rgba(20, 17, 12, 0.62);
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+    }
+    .om-prompt-modal-dialog {
+        width: min(760px, 96vw);
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        background: var(--om-paper);
+        border: 1px solid var(--om-border);
+        border-radius: 10px;
+        box-shadow: 0 18px 48px rgba(0,0,0,0.28);
+    }
+    .om-prompt-modal-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+        padding: 0.9rem 1rem;
+        border-bottom: 1px solid var(--om-border);
+        background: var(--om-cream-soft);
+    }
+    .om-prompt-modal-title {
+        margin: 0;
+        color: var(--om-ink);
+        font-size: 1rem;
+        font-weight: 800;
+    }
+    .om-prompt-modal-close {
+        border: 0;
+        background: transparent;
+        color: var(--om-muted);
+        font-size: 1.5rem;
+        line-height: 1;
+        padding: 0 0.25rem;
+    }
+    .om-prompt-modal-body {
+        padding: 1rem;
+        overflow-y: auto;
+    }
+    .om-prompt-detail-text {
+        color: var(--om-muted);
+        font-size: 0.92rem;
+        margin-bottom: 0.8rem;
+    }
+    .om-prompt-modal-textarea {
+        width: 100%;
+        min-height: 180px;
+        border: 1px solid var(--om-border-strong);
+        border-radius: 8px;
+        background: var(--om-cream-soft);
+        color: var(--om-ink);
+        padding: 0.85rem;
+        resize: vertical;
+        font-size: 0.9rem;
+        line-height: 1.6;
+    }
+    .om-prompt-modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.55rem;
+        padding: 0.85rem 1rem;
+        border-top: 1px solid var(--om-border);
+        background: var(--om-cream-soft);
+    }
+    @media (max-width: 992px) {
+        .om-scenario-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 576px) {
+        .om-matrix-head { display: block; }
+        .om-scenario-grid { grid-template-columns: 1fr; }
+        .om-scenario-card { min-height: 110px; }
+        .om-prompt-modal-actions { flex-direction: column; }
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="row">
     <div class="col-md-12">
@@ -116,39 +292,107 @@
             </div>
         </div>
         
-        <!-- 提交代码提示词 -->
+        <!-- 数据使用矩阵 -->
         <div class="card mb-4 border-0 shadow-sm" style="border-radius: 10px; overflow: hidden;">
             <div class="card-header">
-                <h5 class="mb-0" style="font-weight: 600;">数据提交说明</h5>
+                <h5 class="mb-0" style="font-weight: 600;">数据使用矩阵</h5>
             </div>
             <div class="card-body" style="padding: 2rem;">
-                <div class="mb-4">
-                    <strong class="d-block mb-2">参考提示词（点击复制）：</strong>
-                    <div class="input-group">
-                        <input type="text" class="form-control" readonly value="创建完应用后，以POST方式向 '{{ request.host_url }}api/{{ task.task_id }}' 发送数据" id="simple-instruction" style="border-radius: 8px;">
-                        <button class="btn" style="background-color: #F7F4EC; color: #2D2A24; font-weight: 500; border-radius: 8px;" onclick="copyToClipboard('simple-instruction')">复制</button>
+                <div class="om-matrix-head">
+                    <div>
+                        <h6 class="om-matrix-title">按使用场景复制提示词</h6>
+                        <p class="om-matrix-subtitle">查看用于确认用途，复制用于直接交给 AI，演示用于看操作视频。</p>
                     </div>
                 </div>
 
-                <div class="mb-4">
-                    <strong class="d-block mb-2">参考提示词 · 带附件提交版（点击复制）：</strong>
-                    <div class="input-group">
-                        <input type="text" class="form-control" readonly value='创建带附件上传的 HTML 表单 → form 设 method="POST" 和 enctype="multipart/form-data"，附件用 <input type="file" name="字段名">；用 fetch + new FormData(form) 提交到 "{{ request.host_url }}api/{{ task.task_id }}"，不要手动设 Content-Type' id="attachment-instruction" style="border-radius: 8px;">
-                        <button class="btn" style="background-color: #F7F4EC; color: #2D2A24; font-weight: 500; border-radius: 8px;" onclick="copyToClipboard('attachment-instruction')">复制</button>
-                    </div>
+                <textarea class="om-prompt-source" readonly hidden tabindex="-1" aria-hidden="true" id="simple-instruction">创建完应用后，以POST方式向 '{{ request.host_url }}api/{{ task.task_id }}' 发送数据</textarea>
+                <textarea class="om-prompt-source" readonly hidden tabindex="-1" aria-hidden="true" id="attachment-instruction">创建带附件上传的 HTML 表单 → form 设 method="POST" 和 enctype="multipart/form-data"，附件用 &lt;input type="file" name="字段名"&gt;；用 fetch + new FormData(form) 提交到 "{{ request.host_url }}api/{{ task.task_id }}"，不要手动设 Content-Type</textarea>
+                <textarea class="om-prompt-source" readonly hidden tabindex="-1" aria-hidden="true" id="assistant-widget-instruction">请在这个 HTML 页面右下角增加一个「AI 导师」悬浮球：右下角固定显示圆形按钮，点击后弹出小窗；小窗顶部显示「AI 导师」和关闭按钮，主体用 iframe 嵌入 AI 导师学生访问链接（把链接替换成 "{{ request.host_url }}chat/某个AI导师ID"）；桌面端小窗约 380px × 560px，手机端接近全屏宽度、高度约 75vh；不要破坏原页面表单、按钮、样式和 JavaScript；所有 CSS 和 JavaScript 写在当前 HTML 文件里；请输出完整 HTML 代码</textarea>
+                <textarea class="om-prompt-source" readonly hidden tabindex="-1" aria-hidden="true" id="reveal-instruction">想给附件加「📁 打开服务器文件夹」按钮（自部署场景免下载直接看）→ 发 POST 到 "{{ request.host_url }}attachment/reveal"，body 用 FormData 设 path=附件 url 去掉开头的 /（例：static/uploads/quickform/.../xxx.png）；会在跑 OpenMentor 那台电脑上弹出 Finder / 资源管理器并高亮该文件</textarea>
+                <textarea class="om-prompt-source" readonly hidden tabindex="-1" aria-hidden="true" id="api-dashboard-instruction">请通过数据接口（API 链接）读取数据，制作一个数据大屏 HTML 页面。
+
+数据接口地址：{{ request.host_url }}api/{{ task.task_id }}
+
+请根据我提供的采集页面 HTML 文件了解各字段含义、字段名称和展示方式；页面打开后用 fetch(GET) 请求上面的 API 地址，读取返回数据并渲染统计卡片、图表和明细表。请处理空数据、字段缺失、接口请求失败，以及附件字段（如 _attachments）可能存在的情况。
+
+完整数据格式参考如下，请严格按照这个 JSON 结构读取字段：
+「完整数据格式替换」
+
+请输出一个可直接保存运行的完整 HTML 文件，CSS 和 JavaScript 写在同一个 HTML 文件里，不需要改动后端。</textarea>
+
+                <div class="om-prompt-matrix">
+                    <section>
+                        <div class="om-matrix-section-title">数据采集</div>
+                        <div class="om-scenario-grid">
+                            <div class="om-scenario-card">
+                                <h6 class="om-scenario-name">基础提交页面</h6>
+                                <div class="om-scenario-actions">
+                                    <button type="button" class="btn btn-outline-primary" aria-label="查看基础提交页面提示词" onclick="openPromptDetail('simple')">查看</button>
+                                    <button type="button" class="btn btn-primary" aria-label="复制基础提交页面提示词" onclick="copyToClipboard('simple-instruction', this)">复制</button>
+                                    <button type="button" class="btn btn-outline-primary om-prompt-video-btn" aria-label="查看基础提交页面演示" data-video-key="simple">演示</button>
+                                </div>
+                            </div>
+                            <div class="om-scenario-card">
+                                <h6 class="om-scenario-name">附件采集功能</h6>
+                                <div class="om-scenario-actions">
+                                    <button type="button" class="btn btn-outline-primary" aria-label="查看附件采集功能提示词" onclick="openPromptDetail('attachment')">查看</button>
+                                    <button type="button" class="btn btn-primary" aria-label="复制附件采集功能提示词" onclick="copyToClipboard('attachment-instruction', this)">复制</button>
+                                    <button type="button" class="btn btn-outline-primary om-prompt-video-btn" aria-label="查看附件采集功能演示" data-video-key="attachment">演示</button>
+                                </div>
+                            </div>
+                            <div class="om-scenario-card">
+                                <h6 class="om-scenario-name">AI 导师悬浮球功能</h6>
+                                <div class="om-scenario-actions">
+                                    <button type="button" class="btn btn-outline-primary" aria-label="查看AI导师悬浮球功能提示词" onclick="openPromptDetail('assistantWidget')">查看</button>
+                                    <button type="button" class="btn btn-primary" aria-label="复制AI导师悬浮球功能提示词" onclick="copyToClipboard('assistant-widget-instruction', this)">复制</button>
+                                    <button type="button" class="btn btn-outline-primary om-prompt-video-btn" aria-label="查看AI导师悬浮球功能演示" data-video-key="assistantWidget">演示</button>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section>
+                        <div class="om-matrix-section-title">数据分析</div>
+                        <div class="om-scenario-grid">
+                            <div class="om-scenario-card">
+                                <h6 class="om-scenario-name">基础数据大屏</h6>
+                                <div class="om-scenario-actions">
+                                    <button type="button" class="btn btn-outline-primary" aria-label="查看基础数据大屏提示词" onclick="openPromptDetail('apiDashboard')">查看</button>
+                                    <button type="button" class="btn btn-primary" aria-label="复制基础数据大屏提示词" onclick="copyToClipboard('api-dashboard-instruction', this)">复制</button>
+                                    <button type="button" class="btn btn-outline-primary om-prompt-video-btn" aria-label="查看基础数据大屏演示" data-video-key="apiDashboard">演示</button>
+                                </div>
+                            </div>
+                            <div class="om-scenario-card">
+                                <h6 class="om-scenario-name">本地附件查看功能</h6>
+                                <div class="om-scenario-actions">
+                                    <button type="button" class="btn btn-outline-primary" aria-label="查看本地附件查看功能提示词" onclick="openPromptDetail('reveal')">查看</button>
+                                    <button type="button" class="btn btn-primary" aria-label="复制本地附件查看功能提示词" onclick="copyToClipboard('reveal-instruction', this)">复制</button>
+                                    <button type="button" class="btn btn-outline-primary om-prompt-video-btn" aria-label="查看本地附件查看功能演示" data-video-key="reveal">演示</button>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
                 </div>
 
-                <div class="mb-4">
-                    <strong class="d-block mb-2">参考提示词 · 打开服务器本地文件夹版（点击复制）：</strong>
-                    <div class="input-group">
-                        <input type="text" class="form-control" readonly value='想给附件加「📁 打开服务器文件夹」按钮（自部署场景免下载直接看）→ 发 POST 到 "{{ request.host_url }}attachment/reveal"，body 用 FormData 设 path=附件 url 去掉开头的 /（例：static/uploads/quickform/.../xxx.png）；会在跑 OpenMentor 那台电脑上弹出 Finder / 资源管理器并高亮该文件' id="reveal-instruction" style="border-radius: 8px;">
-                        <button class="btn" style="background-color: #F7F4EC; color: #2D2A24; font-weight: 500; border-radius: 8px;" onclick="copyToClipboard('reveal-instruction')">复制</button>
-                    </div>
+                <div class="mt-4">
+                    <strong class="d-block mb-2">数据接口（API）说明：</strong>
+                    <span style="color: #6B6760;">访问下方 URL，即 GET 方式即可查看已收集的数据；制作实时统计页面时可向大模型提供该 URL 及数据样例。<br>点击这里 <a href="{{ request.host_url }}api/{{ task.task_id }}" target="_blank">{{ request.host_url }}api/{{ task.task_id }}</a> 可以看到全部已经回收的数据。</span>
                 </div>
 
-                <div class="mb-4">
-                    <strong class="d-block mb-2">💡 数据接口（API）说明：</strong>
-                    <span style="color: #6B6760;">访问下方 URL，即GET方式即可查看已收集的数据；制作实时统计页面时可向大模型提供该 URL 及数据样例。<br>点击这里<a href="{{ request.host_url }}api/{{ task.task_id }}" target="_blank">{{ request.host_url }}api/{{ task.task_id }}</a>可以看到全部已经回收的数据。</span>
+                <div id="api-dashboard-extra-note" hidden>
+                    建议先提交 1-2 条测试数据，再打开数据接口链接，把页面里的完整数据内容复制出来，替换提示词里的「完整数据格式替换」。
+                </div>
+                <div id="simple-extra-note" hidden>
+                    用于生成最基础的数据采集页面，只需要把页面里的表单数据提交到当前任务的 API 地址。
+                </div>
+                <div id="attachment-extra-note" hidden>
+                    用于生成支持附件上传的采集页面。重点是使用 multipart/form-data、FormData，并且不要手动设置 Content-Type。
+                </div>
+                <div id="assistant-widget-extra-note" hidden>
+                    用于在采集页面右下角加入 AI 导师悬浮球，把数据采集和 AI 导师答疑放到同一个学生页面里。
+                </div>
+                <div id="reveal-extra-note" hidden>
+                    用于自部署场景的数据大屏，让老师在运行 OpenMentor 的电脑上直接打开附件所在目录。
                 </div>
             </div>
         </div>
@@ -286,18 +530,140 @@
     </div>
 </div>
 
+<div id="prompt-detail-modal" class="om-prompt-modal" aria-hidden="true">
+    <div class="om-prompt-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="prompt-detail-title">
+        <div class="om-prompt-modal-head">
+            <h5 id="prompt-detail-title" class="om-prompt-modal-title">使用场景</h5>
+            <button type="button" class="om-prompt-modal-close" id="prompt-detail-close" aria-label="关闭">×</button>
+        </div>
+        <div class="om-prompt-modal-body">
+            <div id="prompt-detail-note" class="om-prompt-detail-text"></div>
+            <textarea id="prompt-detail-textarea" class="om-prompt-modal-textarea" readonly></textarea>
+        </div>
+        <div class="om-prompt-modal-actions">
+            <button type="button" class="btn btn-outline-primary" id="prompt-detail-demo">演示</button>
+            <button type="button" class="btn btn-primary" id="prompt-detail-copy">复制提示词</button>
+        </div>
+    </div>
+</div>
+
+<div id="prompt-video-modal" style="display:none;position:fixed;inset:0;z-index:1200;background:rgba(20,17,12,0.62);align-items:center;justify-content:center;padding:1rem;">
+    <div style="width:min(920px,96vw);background:var(--om-paper);border:1px solid var(--om-border);border-radius:10px;box-shadow:0 18px 48px rgba(0,0,0,0.28);overflow:hidden;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:0.85rem 1rem;border-bottom:1px solid var(--om-border);background:var(--om-cream-soft);">
+            <h5 id="prompt-video-title" style="margin:0;color:var(--om-ink);font-size:1rem;font-weight:700;">视频演示</h5>
+            <button type="button" id="prompt-video-close" aria-label="关闭" style="border:0;background:transparent;color:var(--om-muted);font-size:1.5rem;line-height:1;padding:0 0.25rem;">×</button>
+        </div>
+        <div style="aspect-ratio:16/9;background:#141413;">
+            <iframe id="prompt-video-frame" src="about:blank" allowfullscreen="allowfullscreen" scrolling="no" sandbox="allow-top-navigation allow-same-origin allow-forms allow-scripts" style="width:100%;height:100%;border:0;display:block;"></iframe>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
 <script>
-    function copyToClipboard(elementId) {
+    // 数据使用矩阵视频演示 BV 号：用于提示词场景制作教学视频。
+    const PROMPT_VIDEO_LINKS = {
+        simple:          {bv: 'BV1WgGq65EHa', title: '基础提交页面制作视频演示'},
+        attachment:      {bv: 'BV1ZrGi6PEiu', title: '附件采集功能制作视频演示'},
+        assistantWidget: {bv: 'BV1N4Gi6yEgx', title: 'AI 导师悬浮球制作视频演示'},
+        reveal:          {bv: 'BV1zzGi6vEgQ', title: '本地附件查看功能制作视频演示'},
+        apiDashboard:    {bv: 'BV1wYGi66EF5', title: '基础数据大屏制作视频演示'},
+    };
+    const PROMPT_SCENARIOS = {
+        simple:          {title: '基础提交页面', instructionId: 'simple-instruction', noteId: 'simple-extra-note'},
+        attachment:      {title: '附件采集功能', instructionId: 'attachment-instruction', noteId: 'attachment-extra-note'},
+        assistantWidget: {title: 'AI 导师悬浮球功能', instructionId: 'assistant-widget-instruction', noteId: 'assistant-widget-extra-note'},
+        reveal:          {title: '本地附件查看功能', instructionId: 'reveal-instruction', noteId: 'reveal-extra-note'},
+        apiDashboard:    {title: '基础数据大屏', instructionId: 'api-dashboard-instruction', noteId: 'api-dashboard-extra-note'},
+    };
+    let currentPromptKey = null;
+
+    function openPromptVideo(key) {
+        const cfg = PROMPT_VIDEO_LINKS[key];
+        if (!cfg) return;
+        if (!cfg.bv) {
+            alert('这个提示词的视频演示还没有上线，后续填入 B 站 BV 号后即可播放。');
+            return;
+        }
+        const modal = document.getElementById('prompt-video-modal');
+        const frame = document.getElementById('prompt-video-frame');
+        const title = document.getElementById('prompt-video-title');
+        title.textContent = cfg.title || '视频演示';
+        frame.src = 'https://player.bilibili.com/player.html?bvid=' + encodeURIComponent(cfg.bv) + '&page=1&high_quality=1&danmaku=0&autoplay=1';
+        modal.style.display = 'flex';
+    }
+
+    function closePromptVideo() {
+        const modal = document.getElementById('prompt-video-modal');
+        const frame = document.getElementById('prompt-video-frame');
+        modal.style.display = 'none';
+        frame.src = 'about:blank';
+    }
+
+    function openPromptDetail(key) {
+        const cfg = PROMPT_SCENARIOS[key];
+        if (!cfg) return;
+        const promptEl = document.getElementById(cfg.instructionId);
+        const noteEl = document.getElementById(cfg.noteId);
+        const modal = document.getElementById('prompt-detail-modal');
+        document.getElementById('prompt-detail-title').textContent = cfg.title;
+        document.getElementById('prompt-detail-note').textContent = noteEl ? noteEl.textContent.trim() : '';
+        document.getElementById('prompt-detail-textarea').value = promptEl ? promptEl.value : '';
+        currentPromptKey = key;
+        modal.style.display = 'flex';
+        modal.setAttribute('aria-hidden', 'false');
+    }
+
+    function closePromptDetail() {
+        const modal = document.getElementById('prompt-detail-modal');
+        modal.style.display = 'none';
+        modal.setAttribute('aria-hidden', 'true');
+    }
+
+    async function copyToClipboard(elementId, triggerBtn) {
         const element = document.getElementById(elementId);
-        element.select();
-        element.setSelectionRange(0, 99999);
-        document.execCommand('copy');
+        if (!element) return;
+        const text = typeof element.value === 'string' ? element.value : element.textContent;
+        let copied = false;
+        const fallbackCopy = function(value) {
+            const temp = document.createElement('textarea');
+            temp.value = value;
+            temp.setAttribute('readonly', '');
+            temp.style.position = 'fixed';
+            temp.style.left = '-9999px';
+            temp.style.top = '0';
+            document.body.appendChild(temp);
+            temp.select();
+            const ok = document.execCommand('copy');
+            document.body.removeChild(temp);
+            return ok;
+        };
+
+        try {
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(text);
+                copied = true;
+            }
+        } catch (err) {}
+
+        if (!copied) {
+            try {
+                copied = fallbackCopy(text);
+            } catch (err) {
+                copied = false;
+            }
+        }
+
+        if (!copied) {
+            alert('复制失败，请打开查看后手动复制。');
+            return;
+        }
         
         // 显示复制成功提示
-        const btn = element.nextElementSibling;
+        const btn = triggerBtn || element.nextElementSibling;
+        if (!btn) return;
         const originalText = btn.innerHTML;
         btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-check" viewBox="0 0 16 16"><path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/></svg> 已复制';
         
@@ -399,6 +765,37 @@
         modal.addEventListener('click', function(e) {
             if (e.target === modal) {
                 modal.style.display = 'none';
+            }
+        });
+
+        document.querySelectorAll('.om-prompt-video-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                openPromptVideo(this.getAttribute('data-video-key'));
+            });
+        });
+        document.getElementById('prompt-video-close').addEventListener('click', closePromptVideo);
+        document.getElementById('prompt-video-modal').addEventListener('click', function(e) {
+            if (e.target === this) closePromptVideo();
+        });
+        document.getElementById('prompt-detail-close').addEventListener('click', closePromptDetail);
+        document.getElementById('prompt-detail-modal').addEventListener('click', function(e) {
+            if (e.target === this) closePromptDetail();
+        });
+        document.getElementById('prompt-detail-copy').addEventListener('click', function() {
+            const cfg = PROMPT_SCENARIOS[currentPromptKey];
+            if (cfg) copyToClipboard(cfg.instructionId, this);
+        });
+        document.getElementById('prompt-detail-demo').addEventListener('click', function() {
+            if (currentPromptKey) {
+                const key = currentPromptKey;
+                closePromptDetail();
+                openPromptVideo(key);
+            }
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closePromptVideo();
+                closePromptDetail();
             }
         });
 

@@ -201,10 +201,33 @@
             transition: all 0.15s ease;
             display: inline-flex;
             align-items: center;
+            justify-content: center;
             line-height: 1;
+            text-decoration: none;
         }
         .theme-toggle:hover { background: var(--om-cream-warm); color: var(--om-ink); border-color: var(--om-border-strong); }
         .theme-toggle .bi { font-size: 1rem; }
+        .edition-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            min-height: 32px;
+            padding: 0.28rem 0.72rem;
+            border-radius: 999px;
+            border: 1px solid rgba(91, 117, 83, 0.38);
+            background: var(--om-success-soft);
+            color: var(--om-success);
+            font-size: 0.82rem;
+            font-weight: 700;
+            line-height: 1;
+            white-space: nowrap;
+        }
+        .edition-badge .bi { font-size: 0.95rem; }
+        .edition-badge.community {
+            border-color: rgba(217, 119, 87, 0.38);
+            background: var(--om-clay-soft);
+            color: var(--om-clay-deep);
+        }
 
         /* 切换主题时禁用过渡，避免色变闪烁 */
         html.theme-changing,
@@ -851,16 +874,27 @@
                         </button>
                     </li>
                     <li class="nav-item me-2">
+                        <span class="edition-badge community" title="当前为个人版" aria-label="当前为个人版">
+                            <i class="bi bi-person-workspace"></i> 个人版
+                        </span>
+                    </li>
+                    <li class="nav-item me-2">
+                        <a href="https://openmentor.top" target="_blank" rel="noopener" class="theme-toggle" id="om-recommend-link" title="推荐他人使用并复制链接" aria-label="推荐他人使用并复制链接">
+                            <i class="bi bi-share"></i>
+                        </a>
+                    </li>
+                    <li class="nav-item me-2">
                         <button id="om-theme-toggle" class="theme-toggle" type="button" title="切换主题（亮 / 暗）" aria-label="切换主题">
                             <i class="bi bi-moon-stars" id="om-theme-icon"></i>
                         </button>
                     </li>
                     {% if current_user.is_authenticated %}
                     <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                            <i class="bi bi-person-circle"></i> {{ current_user.username }}
+                        <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false" title="账号：{{ current_user.username }}">
+                            <i class="bi bi-person-circle"></i> {{ current_user.display_name or current_user.username }}
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="navbarDropdown">
+                            <li><a class="dropdown-item" href="{{ url_for('mobile_console') }}"><i class="bi bi-phone"></i> 移动控制台</a></li>
                             <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="bi bi-gear"></i> 设置</a></li>
                             <li><a class="dropdown-item" href="{{ url_for('changelog') }}"><i class="bi bi-journal-text"></i> 更新日志</a></li>
                             <li><hr class="dropdown-divider"></li>
@@ -909,6 +943,10 @@
                     <i class="bi bi-github"></i> GitHub
                 </a>
                 <span style="color: var(--om-border-strong); margin: 0 0.6rem;">·</span>
+                <a href="https://github.com/buBailai/OpenMentor-skill" target="_blank" rel="noopener" class="text-decoration-none">
+                    <i class="bi bi-lightning-charge"></i> Skill
+                </a>
+                <span style="color: var(--om-border-strong); margin: 0 0.6rem;">·</span>
                 <a href="https://scnxnljz0ey0.feishu.cn/docx/I8qxdpNdPo38xJxsaiscMC09n6g" target="_blank" rel="noopener" class="text-decoration-none">
                     <i class="bi bi-book"></i> 开源教程
                 </a>
@@ -947,6 +985,58 @@
             });
         })();
 
+        function showGlobalToast(message, isError) {
+            var old = document.getElementById('om-global-toast');
+            if (old) old.remove();
+            var tooltip = document.createElement('div');
+            tooltip.id = 'om-global-toast';
+            tooltip.className = 'position-fixed top-50 start-50 translate-middle text-white px-4 py-2 rounded shadow-lg';
+            tooltip.style.background = isError ? 'var(--om-danger)' : 'var(--om-ink)';
+            tooltip.style.borderRadius = '999px';
+            tooltip.style.zIndex = '9999';
+            tooltip.textContent = message;
+            document.body.appendChild(tooltip);
+            setTimeout(function() {
+                if (tooltip.parentNode) tooltip.parentNode.removeChild(tooltip);
+            }, 2000);
+        }
+
+        // 推荐他人使用：打开官网，同时复制官网地址，方便老师直接粘贴分享
+        (function() {
+            var recommendLink = document.getElementById('om-recommend-link');
+            if (!recommendLink) return;
+            recommendLink.addEventListener('click', function() {
+                var url = recommendLink.href;
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(url)
+                        .then(function() { showGlobalToast('官网链接已复制，可以直接分享'); })
+                        .catch(function() { fallbackCopyText(url); });
+                } else {
+                    fallbackCopyText(url);
+                }
+            });
+        })();
+
+        function fallbackCopyText(text) {
+            var textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-999999px';
+            textArea.style.top = '-999999px';
+            document.body.appendChild(textArea);
+            try {
+                textArea.focus();
+                textArea.select();
+                var ok = document.execCommand('copy');
+                showGlobalToast(ok ? '官网链接已复制，可以直接分享' : '复制失败，请手动复制链接', !ok);
+            } catch (err) {
+                console.error('复制失败:', err);
+                showGlobalToast('复制失败，请手动复制链接', true);
+            } finally {
+                document.body.removeChild(textArea);
+            }
+        }
+
         // 全局复制到剪贴板函数
         function copyToClipboard(elementId) {
             const element = document.getElementById(elementId);
@@ -964,32 +1054,10 @@
                 textArea.select();
                 document.execCommand('copy');
 
-                const tooltip = document.createElement('div');
-                tooltip.className = 'position-fixed top-50 start-50 translate-middle text-white px-4 py-2 rounded shadow-lg';
-                tooltip.style.background = 'var(--om-ink)';
-                tooltip.style.borderRadius = '999px';
-                tooltip.textContent = '链接已复制';
-                tooltip.style.zIndex = '9999';
-                document.body.appendChild(tooltip);
-
-                setTimeout(function() {
-                    if (tooltip.parentNode) {
-                        document.body.removeChild(tooltip);
-                    }
-                }, 2000);
+                showGlobalToast('链接已复制');
             } catch (err) {
                 console.error('复制失败:', err);
-                const errorTooltip = document.createElement('div');
-                errorTooltip.className = 'position-fixed top-50 start-50 translate-middle text-white px-4 py-2 rounded shadow-lg';
-                errorTooltip.style.background = 'var(--om-danger)';
-                errorTooltip.textContent = '复制失败，请手动复制链接';
-                errorTooltip.style.zIndex = '9999';
-                document.body.appendChild(errorTooltip);
-                setTimeout(function() {
-                    if (errorTooltip.parentNode) {
-                        document.body.removeChild(errorTooltip);
-                    }
-                }, 2000);
+                showGlobalToast('复制失败，请手动复制链接', true);
             } finally {
                 document.body.removeChild(textArea);
             }

@@ -4,10 +4,13 @@ import re
 import requests
 import threading
 import time
+import sqlite3
+import shutil
+from functools import wraps
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 import urllib.parse
-from flask import Flask, render_template, redirect, url_for, request, flash, jsonify, make_response, send_file, send_from_directory, session, Response
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Date, Boolean, ForeignKey, UniqueConstraint, inspect, text
+from flask import Flask, render_template, redirect, url_for, request, flash, jsonify, make_response, send_file, send_from_directory, session, Response, abort
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Date, Boolean, ForeignKey, UniqueConstraint, inspect, text, func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
@@ -15,13 +18,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import uuid
 import random
 import string
-from datetime import datetime
-import pandas as pd
+from datetime import datetime, timedelta
 import io
 import base64
-import matplotlib
-matplotlib.use('Agg')  # 使用非交互式后端
-import matplotlib.pyplot as plt
 from dotenv import load_dotenv
 import logging
 # 配置日志
@@ -55,6 +54,41 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB 全局上限（OpenM
 app.config['JSON_AS_ASCII'] = False  # 确保JSON响应中的中文正确显示，不转义为Unicode
 
 APP_NAME = 'OpenMentor'
+
+
+def _sqlite_db_path_from_url(database_url):
+    if database_url.startswith('sqlite:///'):
+        return database_url.replace('sqlite:///', '', 1)
+    return None
+
+
+DB_FILE_PATH = _sqlite_db_path_from_url(DATABASE_URL)
+DB_EXISTED_BEFORE_START = bool(DB_FILE_PATH and os.path.exists(DB_FILE_PATH))
+
+
+def _has_non_placeholder_files(path):
+    if not os.path.exists(path):
+        return False
+    for root, dirs, files in os.walk(path):
+        for name in files:
+            if name not in {'.DS_Store', '.gitkeep'}:
+                return True
+    return False
+
+
+def _guard_against_orphan_runtime_data():
+    """防止 DB 缺失但附件/报告还在时静默创建空库，避免用户误以为数据被清空。"""
+    if DB_EXISTED_BEFORE_START or not DB_FILE_PATH:
+        return
+    runtime_paths = ['static/uploads', 'static/reports']
+    if any(_has_non_placeholder_files(p) for p in runtime_paths):
+        raise RuntimeError(
+            '检测到 openmentor.db 不存在，但 static/uploads 或 static/reports 中已有数据。'
+            '为避免误创建空数据库，请先检查数据库文件或从备份恢复。'
+        )
+
+
+_guard_against_orphan_runtime_data()
 
 # 初始化SQLAlchemy
 engine = create_engine(DATABASE_URL, connect_args={'check_same_thread': False})
@@ -139,9 +173,18 @@ class User(UserMixin, Base):
     username = Column(String(50), unique=True, nullable=False)
     email = Column(String(100), unique=True, nullable=False)
     password = Column(String(200), nullable=False)
+    role = Column(String(20), default='teacher', nullable=False)  # admin / teacher
+    is_active_flag = Column(Boolean, default=True, nullable=False)
+    display_name = Column(String(100))
+    force_password_change = Column(Boolean, default=False, nullable=False)
+    last_login_at = Column(DateTime)
     created_at = Column(DateTime, default=datetime.now)
     tasks = relationship('Task', back_populates='author')
     ai_config = relationship('AIConfig', back_populates='user', uselist=False)
+
+    @property
+    def is_active(self):
+        return bool(self.is_active_flag)
 
 class Task(Base):
     __tablename__ = 'task'
@@ -206,6 +249,9 @@ class AIConfig(Base):
 
 class AIModelConfig(Base):
     __tablename__ = 'ai_model_config'
+    __table_args__ = (
+        UniqueConstraint('ai_config_id', 'model_name', name='uq_ai_model_config_scope'),
+    )
     id = Column(Integer, primary_key=True)
     ai_config_id = Column(Integer, ForeignKey('ai_config.id'))
     ai_config = relationship('AIConfig', back_populates='model_configs')
@@ -321,15 +367,169 @@ class Message(Base):
 Base.metadata.create_all(engine)
 
 
+def _quote_ident(name):
+    return '"' + name.replace('"', '""') + '"'
+
+
+def _migration_lock_path():
+    os.makedirs('backups', exist_ok=True)
+    return os.path.join('backups', '.openmentor_migration.lock')
+
+
+def _acquire_migration_lock():
+    """简易跨平台迁移锁，防止两个启动器同时改库。"""
+    lock_path = _migration_lock_path()
+    now = time.time()
+    try:
+        if os.path.exists(lock_path):
+            age = now - os.path.getmtime(lock_path)
+            if age > 30 * 60:
+                logger.warning('[OpenMentor 迁移] 发现超过 30 分钟的旧锁，自动移除')
+                os.remove(lock_path)
+        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(fd, f'pid={os.getpid()} time={datetime.now().isoformat()}\n'.encode('utf-8'))
+        return fd, lock_path
+    except FileExistsError:
+        raise RuntimeError('数据库迁移锁已存在，可能有另一个 OpenMentor 正在启动或迁移。请稍后再试。')
+
+
+def _release_migration_lock(lock_info):
+    fd, lock_path = lock_info
+    try:
+        os.close(fd)
+    except Exception:
+        pass
+    try:
+        if os.path.exists(lock_path):
+            os.remove(lock_path)
+    except Exception as e:
+        logger.warning(f'[OpenMentor 迁移] 删除迁移锁失败: {e}')
+
+
+def _backup_sqlite_database(reason='migration'):
+    if not DB_FILE_PATH or not os.path.exists(DB_FILE_PATH):
+        return None
+    os.makedirs('backups', exist_ok=True)
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    backup_path = os.path.join('backups', f'openmentor_{ts}_before_{reason}.db')
+    src = sqlite3.connect(DB_FILE_PATH)
+    dst = sqlite3.connect(backup_path)
+    try:
+        src.backup(dst)
+    finally:
+        dst.close()
+        src.close()
+    logger.info(f'[OpenMentor 迁移] 已备份数据库到 {backup_path}')
+    return backup_path
+
+
+def _ensure_schema_migration_table(conn):
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS schema_migration (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            namespace VARCHAR(50) NOT NULL,
+            version VARCHAR(100) NOT NULL,
+            applied_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            notes TEXT,
+            UNIQUE(namespace, version)
+        )
+    """))
+
+
+def _mark_migration_applied(conn, namespace, version, notes=''):
+    conn.execute(
+        text("""
+            INSERT OR IGNORE INTO schema_migration (namespace, version, notes)
+            VALUES (:namespace, :version, :notes)
+        """),
+        {'namespace': namespace, 'version': version, 'notes': notes},
+    )
+
+
+def _sqlite_index_columns(conn, index_name):
+    rows = conn.exec_driver_sql(f"PRAGMA index_info({_quote_ident(index_name)})").fetchall()
+    return [row[2] for row in rows]
+
+
+def _ai_model_config_needs_scope_migration(conn, table_names=None):
+    table_names = table_names or inspect(engine).get_table_names()
+    if 'ai_model_config' not in table_names:
+        return False
+
+    table_sql_row = conn.execute(text("""
+        SELECT sql FROM sqlite_master
+        WHERE type = 'table' AND name = 'ai_model_config'
+    """)).fetchone()
+    table_sql = table_sql_row[0] if table_sql_row else ''
+
+    has_global_model_unique = 'UNIQUE (model_name)' in table_sql
+    has_scoped_unique = False
+    for row in conn.exec_driver_sql("PRAGMA index_list('ai_model_config')").fetchall():
+        # PRAGMA index_list: seq, name, unique, origin, partial
+        if not row[2]:
+            continue
+        cols = _sqlite_index_columns(conn, row[1])
+        if cols == ['model_name']:
+            has_global_model_unique = True
+        if cols == ['ai_config_id', 'model_name']:
+            has_scoped_unique = True
+
+    return has_global_model_unique or not has_scoped_unique
+
+
+def _migrate_ai_model_config_scope(conn, table_names):
+    """把模型配置唯一性从全局 model_name 改为 ai_config_id + model_name。"""
+    if not _ai_model_config_needs_scope_migration(conn, table_names):
+        return False
+
+    conn.execute(text("""
+        CREATE TABLE ai_model_config_new (
+            id INTEGER NOT NULL PRIMARY KEY,
+            ai_config_id INTEGER,
+            model_name VARCHAR(50),
+            api_key VARCHAR(200),
+            api_url VARCHAR(200),
+            extra_settings TEXT,
+            image_gen_model VARCHAR(100),
+            FOREIGN KEY(ai_config_id) REFERENCES ai_config (id)
+        )
+    """))
+    conn.execute(text("""
+        INSERT INTO ai_model_config_new
+            (id, ai_config_id, model_name, api_key, api_url, extra_settings, image_gen_model)
+        SELECT
+            id, ai_config_id, model_name, api_key, api_url, extra_settings, image_gen_model
+        FROM ai_model_config
+    """))
+    conn.execute(text("DROP TABLE ai_model_config"))
+    conn.execute(text("ALTER TABLE ai_model_config_new RENAME TO ai_model_config"))
+    conn.execute(text("""
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_ai_model_config_scope
+        ON ai_model_config (ai_config_id, model_name)
+    """))
+    return True
+
+
 def migrate_database():
-    """OpenMentor 非破坏性数据库迁移
-    为已存在的 task / ai_model_config 表追加 OpenMentor 新增列；列已存在则跳过。
-    新建数据库由 Base.metadata.create_all 自动建好，本函数仅为旧 QuickForm 数据库平滑升级。
+    """OpenMentor 非破坏性数据库迁移。
+
+    规则：
+    - 只追加字段/表，不覆盖 openmentor.db
+    - 真正执行结构变更前自动备份 SQLite
+    - migration 需要幂等，可重复启动
     """
     inspector = inspect(engine)
     table_names = inspector.get_table_names()
 
     plans = []
+    if 'user' in table_names:
+        plans.append(('user', [
+            ('role', "VARCHAR(20) DEFAULT 'teacher' NOT NULL"),
+            ('is_active_flag', "BOOLEAN DEFAULT 1 NOT NULL"),
+            ('display_name', "VARCHAR(100)"),
+            ('force_password_change', "BOOLEAN DEFAULT 0 NOT NULL"),
+            ('last_login_at', "DATETIME"),
+        ]))
     if 'task' in table_names:
         plans.append(('task', [
             ('is_assistant', "BOOLEAN DEFAULT 0"),
@@ -358,21 +558,97 @@ def migrate_database():
             ('rating', "INTEGER"),
         ]))
 
-    total_added = []
-    with engine.begin() as conn:
-        for table_name, new_cols in plans:
-            existing_cols = {c['name'] for c in inspector.get_columns(table_name)}
-            for col_name, col_def in new_cols:
-                if col_name not in existing_cols:
-                    conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_def}"))
-                    total_added.append(f'{table_name}.{col_name}')
-    if total_added:
-        logger.info(f"[OpenMentor 迁移] 新增 {len(total_added)} 个列: {', '.join(total_added)}")
-    else:
+    pending_cols = []
+    for table_name, new_cols in plans:
+        existing_cols = {c['name'] for c in inspector.get_columns(table_name)}
+        for col_name, col_def in new_cols:
+            if col_name not in existing_cols:
+                pending_cols.append((table_name, col_name, col_def))
+
+    schema_table_missing = 'schema_migration' not in table_names
+    with engine.connect() as conn:
+        ai_model_scope_migration_needed = _ai_model_config_needs_scope_migration(conn, table_names)
+
+    if not pending_cols and not schema_table_missing and not ai_model_scope_migration_needed:
         logger.info("[OpenMentor 迁移] 表结构已是最新，无需迁移")
+        return
+
+    lock_info = _acquire_migration_lock()
+    try:
+        backup_path = _backup_sqlite_database('migration') if DB_EXISTED_BEFORE_START else None
+        total_added = []
+        with engine.begin() as conn:
+            _ensure_schema_migration_table(conn)
+            for table_name, col_name, col_def in pending_cols:
+                conn.execute(text(
+                    f"ALTER TABLE {_quote_ident(table_name)} ADD COLUMN {_quote_ident(col_name)} {col_def}"
+                ))
+                total_added.append(f'{table_name}.{col_name}')
+
+            if _migrate_ai_model_config_scope(conn, table_names):
+                total_added.append('ai_model_config scoped unique index')
+                _mark_migration_applied(
+                    conn,
+                    'core',
+                    '20260522-ai-model-config-scope',
+                    'AI model config uniqueness changed from model_name to ai_config_id + model_name',
+                )
+
+            if 'user' in table_names:
+                # 旧个人版升级：旧用户默认启用；如果没有 admin，最早创建的用户成为 admin/owner，避免升级后锁死。
+                conn.execute(text("UPDATE \"user\" SET role = 'teacher' WHERE role IS NULL OR role = ''"))
+                conn.execute(text("UPDATE \"user\" SET is_active_flag = 1 WHERE is_active_flag IS NULL"))
+                conn.execute(text("UPDATE \"user\" SET force_password_change = 0 WHERE force_password_change IS NULL"))
+                admin_count = conn.execute(text("SELECT COUNT(*) FROM \"user\" WHERE role = 'admin'")).scalar() or 0
+                if admin_count == 0:
+                    first_id = conn.execute(text("SELECT id FROM \"user\" ORDER BY id ASC LIMIT 1")).scalar()
+                    if first_id:
+                        conn.execute(text("UPDATE \"user\" SET role = 'admin' WHERE id = :id"), {'id': first_id})
+
+            _mark_migration_applied(conn, 'core', '2026-05-22-user-role-and-safe-migration', f'backup={backup_path or ""}')
+
+        if total_added:
+            logger.info(f"[OpenMentor 迁移] 新增 {len(total_added)} 个列: {', '.join(total_added)}")
+        else:
+            logger.info("[OpenMentor 迁移] 已初始化 schema_migration，无新增列")
+    except Exception:
+        logger.exception('[OpenMentor 迁移] 迁移失败，服务将停止启动')
+        raise
+    finally:
+        _release_migration_lock(lock_info)
 
 
 migrate_database()
+
+
+def _ensure_default_admin_user():
+    """新安装或纯代码 clone 后，如果库里没有用户，自动创建默认 admin。"""
+    db = SessionLocal()
+    try:
+        user_count = db.query(User).count()
+        if user_count > 0:
+            return
+        admin = User(
+            username='admin',
+            email='admin@openmentor.local',
+            password=generate_password_hash('openmentor'),
+            role='admin',
+            display_name='管理员',
+            is_active_flag=True,
+            force_password_change=True,
+        )
+        db.add(admin)
+        db.commit()
+        logger.info("[OpenMentor 初始化] 已创建默认管理员账号 admin / openmentor")
+    except Exception:
+        db.rollback()
+        logger.exception('[OpenMentor 初始化] 创建默认管理员账号失败')
+        raise
+    finally:
+        db.close()
+
+
+_ensure_default_admin_user()
 
 
 # OpenMentor 调试：捕获所有 400/413 异常并打印详情
@@ -398,6 +674,25 @@ login_manager.login_view = 'login'
 
 # 使用werkzeug.security进行密码加密（无需初始化）
 
+def is_admin_user(user=None):
+    user = user or current_user
+    return bool(getattr(user, 'is_authenticated', False) and getattr(user, 'role', '') == 'admin')
+
+
+def _is_safe_next_url(target):
+    """只允许登录后跳回本站内部地址，避免开放重定向。"""
+    if not target:
+        return False
+    ref = urllib.parse.urlparse(request.host_url)
+    test = urllib.parse.urlparse(urllib.parse.urljoin(request.host_url, target))
+    return test.scheme in ('http', 'https') and ref.netloc == test.netloc
+
+
+def _safe_next_url(target, default_endpoint='dashboard'):
+    return target if _is_safe_next_url(target) else url_for(default_endpoint)
+
+
+@login_manager.user_loader
 @login_manager.user_loader
 def load_user(user_id):
     db = SessionLocal()
@@ -405,6 +700,27 @@ def load_user(user_id):
         return db.query(User).get(int(user_id))
     finally:
         db.close()
+
+
+@app.before_request
+def _enforce_account_state():
+    if not current_user.is_authenticated:
+        return None
+
+    endpoint = request.endpoint or ''
+    allowed = {'logout', 'profile', 'static', 'pwa_manifest', 'pwa_service_worker'}
+
+    if not current_user.is_active:
+        logout_user()
+        flash('该账号已被禁用，请联系管理员', 'danger')
+        return redirect(url_for('login'))
+
+    if getattr(current_user, 'force_password_change', False) and endpoint not in allowed:
+        next_target = request.full_path if request.query_string else request.path
+        flash('请先修改临时密码', 'warning')
+        return redirect(url_for('profile', active_tab='password', next=next_target))
+
+    return None
 
 def read_file_content(file_path):
     try:
@@ -955,6 +1271,13 @@ def perform_analysis_with_custom_prompt(task_id, user_id, ai_config_id, custom_p
 # 路由函数
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    next_page = request.values.get('next', '').strip()
+
+    if current_user.is_authenticated and request.method == 'GET':
+        if getattr(current_user, 'force_password_change', False):
+            return redirect(url_for('profile', active_tab='password', next=next_page))
+        return redirect(_safe_next_url(next_page)) if next_page else redirect(url_for('dashboard'))
+
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
@@ -964,20 +1287,27 @@ def login():
             user = db.query(User).filter_by(username=username).first()
             
             if user and check_password_hash(user.password, password):
+                if not user.is_active:
+                    flash('该账号已被禁用，请联系管理员', 'danger')
+                    return render_template('login.html')
+                user.last_login_at = datetime.now()
+                db.commit()
                 login_user(user)
                 
-                if password == 'openmentor':
+                if getattr(user, 'force_password_change', False) or password == 'openmentor':
                     flash('请修改您的默认密码', 'warning')
-                    return redirect(url_for('profile'))
+                    profile_args = {'active_tab': 'password'}
+                    if next_page and _is_safe_next_url(next_page):
+                        profile_args['next'] = next_page
+                    return redirect(url_for('profile', **profile_args))
                 
-                next_page = request.args.get('next')
-                return redirect(next_page) if next_page else redirect(url_for('dashboard'))
+                return redirect(_safe_next_url(next_page)) if next_page else redirect(url_for('dashboard'))
             else:
                 flash('用户名或密码错误', 'danger')
         finally:
             db.close()
     
-    return render_template('login.html')
+    return render_template('login.html', next_page=next_page)
 
 @app.route('/logout')
 def logout():
@@ -1993,6 +2323,7 @@ def export_data(task_id):
                     'raw_data': sub.data
                 })
         
+        import pandas as pd
         df = pd.DataFrame(data_list)
         
         # 创建CSV文件
@@ -2189,9 +2520,11 @@ def system_init():
 def profile():
     db = SessionLocal()
     try:
+        next_page = request.values.get('next', '').strip()
         ai_config = db.query(AIConfig).filter_by(user_id=current_user.id).first()
 
         if request.method == 'POST':
+            password_changed = False
             if 'selected_model' in request.form:
                 selected_model = request.form.get('selected_model')
 
@@ -2266,7 +2599,10 @@ def profile():
             elif 'change_username' in request.form:
                 new_username = request.form.get('username', '').strip()
                 user = db.query(User).filter_by(id=current_user.id).first()
-                if user and new_username:
+                exists = db.query(User).filter(User.username == new_username, User.id != current_user.id).first() if new_username else None
+                if exists:
+                    flash('用户名已存在', 'danger')
+                elif user and new_username:
                     user.username = new_username
                     db.commit()
                     flash('用户名修改成功', 'success')
@@ -2275,18 +2611,30 @@ def profile():
 
             elif 'change_password' in request.form:
                 current_password = request.form.get('current_password')
-                new_password = request.form.get('new_password')
+                new_password = (request.form.get('new_password') or '').strip()
+                confirm_password = (request.form.get('confirm_password') or '').strip()
 
                 user = db.query(User).filter_by(id=current_user.id).first()
-                if user and check_password_hash(user.password, current_password):
+                if len(new_password) < 6:
+                    flash('新密码长度至少为 6 个字符', 'danger')
+                elif new_password != confirm_password:
+                    flash('两次输入的新密码不一致', 'danger')
+                elif user and check_password_hash(user.password, current_password):
                     user.password = generate_password_hash(new_password)
+                    user.force_password_change = False
                     db.commit()
+                    password_changed = True
                     flash('密码修改成功', 'success')
                 else:
                     flash('当前密码错误', 'danger')
 
             active_tab = request.form.get('active_tab', 'config')
-            return redirect(url_for('profile', active_tab=active_tab))
+            if password_changed and next_page and _is_safe_next_url(next_page):
+                return redirect(next_page)
+            profile_args = {'active_tab': active_tab}
+            if next_page and _is_safe_next_url(next_page):
+                profile_args['next'] = next_page
+            return redirect(url_for('profile', **profile_args))
 
         model_configs_dict = {}
         if ai_config:
@@ -2295,10 +2643,19 @@ def profile():
 
         qf_config = db.query(QFConfig).filter_by(user_id=current_user.id).first()
 
-        return render_template('profile.html', user=current_user, ai_config=ai_config, model_configs_dict=model_configs_dict, qf_config=qf_config)
+        return render_template(
+            'profile.html',
+            user=current_user,
+            ai_config=ai_config,
+            model_configs_dict=model_configs_dict,
+            qf_config=qf_config,
+            next_page=next_page if _is_safe_next_url(next_page) else '',
+        )
     finally:
         db.close()
 
+
+@app.route('/analyze/<int:task_id>/smart_analyze', methods=['GET'])
 @app.route('/analyze/<int:task_id>/smart_analyze', methods=['GET'])
 @login_required
 def smart_analyze(task_id):
@@ -2546,6 +2903,102 @@ def _load_blocked_keywords(json_str):
     for key, default in DEFAULT_BLOCKED_KEYWORDS.items():
         merged[key] = {**default, **loaded.get(key, {})}
     return merged
+
+
+def _dt_text(value, with_seconds=False):
+    """把 DateTime 转成前端友好的字符串。"""
+    if not value:
+        return None
+    return value.strftime('%Y-%m-%d %H:%M:%S' if with_seconds else '%Y-%m-%d %H:%M')
+
+
+def _truthy(value):
+    """兼容 JSON / 表单传来的布尔值。"""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in ('1', 'true', 'yes', 'on')
+    return bool(value)
+
+
+def _split_mobile_keywords(value, fallback=None):
+    if isinstance(value, list):
+        keywords = [str(x).strip() for x in value if str(x).strip()]
+    else:
+        text = str(value or '').strip()
+        keywords = [x.strip() for x in re.split(r'[,，\n]+', text) if x.strip()] if text else []
+    return keywords or list(fallback or [])
+
+
+def _mobile_blocked_keywords_json(current_json, incoming):
+    """移动端黑名单编辑器的 JSON 标准化。"""
+    current = _load_blocked_keywords(current_json)
+    incoming = incoming or {}
+    result = {}
+    for key, default in DEFAULT_BLOCKED_KEYWORDS.items():
+        old = current.get(key, default)
+        new = incoming.get(key, {}) if isinstance(incoming, dict) else {}
+        if not isinstance(new, dict):
+            new = {}
+        keywords_value = new.get('keywords_text', new.get('keywords', old.get('keywords', default['keywords'])))
+        result[key] = {
+            'label': default['label'],
+            'enabled': _truthy(new.get('enabled', old.get('enabled', default['enabled']))),
+            'keywords': _split_mobile_keywords(keywords_value, old.get('keywords', default['keywords'])),
+        }
+    return json.dumps(result, ensure_ascii=False)
+
+
+def _mobile_assistant_summary(db, assistant):
+    """移动控制台列表卡片统计。"""
+    convs = db.query(Conversation).filter_by(assistant_id=assistant.id).all()
+    conv_ids = [c.id for c in convs]
+    students = {}
+    for c in convs:
+        key = (c.student_class or '', c.student_name or '')
+        item = students.setdefault(key, {'blocked': False, 'last_active_at': None})
+        item['blocked'] = item['blocked'] or bool(c.is_blocked)
+        if c.last_active_at and (not item['last_active_at'] or c.last_active_at > item['last_active_at']):
+            item['last_active_at'] = c.last_active_at
+
+    msg_count = 0
+    alert_count = 0
+    latest_alert = None
+    if conv_ids:
+        msg_count = db.query(Message).filter(Message.conversation_id.in_(conv_ids)).count()
+        alert_q = (
+            db.query(Message)
+            .filter(Message.conversation_id.in_(conv_ids))
+            .filter(Message.triggered_keyword.isnot(None))
+            .filter(Message.triggered_keyword != '')
+        )
+        alert_count = alert_q.count()
+        latest_alert = alert_q.order_by(Message.created_at.desc()).first()
+
+    active_cutoff = datetime.now() - timedelta(minutes=10)
+    active_students = sum(1 for s in students.values() if s['last_active_at'] and s['last_active_at'] >= active_cutoff)
+    is_expired = bool(assistant.link_expires_at and assistant.link_expires_at < datetime.now())
+    return {
+        'id': assistant.id,
+        'title': assistant.title,
+        'description': assistant.description or '',
+        'status': assistant.status or 'active',
+        'effective_status': 'expired' if is_expired else (assistant.status or 'active'),
+        'student_url': f"{request.host_url.rstrip('/')}/chat/{assistant.task_id}",
+        'selected_model_name': assistant.selected_model_name or '默认',
+        'allow_image_input': bool(assistant.allow_image_input),
+        'allow_file_upload': bool(assistant.allow_file_upload),
+        'allow_image_generation': bool(assistant.allow_image_generation),
+        'daily_limit': assistant.max_messages_per_student_daily or 50,
+        'student_count': len(students),
+        'active_students': active_students,
+        'blocked_students': sum(1 for s in students.values() if s['blocked']),
+        'session_count': len(convs),
+        'message_count': msg_count,
+        'alert_count': alert_count,
+        'latest_alert_at': _dt_text(latest_alert.created_at) if latest_alert else None,
+        'link_expires_at': _dt_text(assistant.link_expires_at),
+    }
 
 
 @app.route('/assistant/list')
@@ -3132,6 +3585,7 @@ def assistant_audit_export(assistant_id):
             flash('该 AI 导师暂无对话记录', 'info')
             return redirect(url_for('assistant_audit', assistant_id=assistant.id))
 
+        import pandas as pd
         df = pd.DataFrame(rows)
         from io import BytesIO
         bio = BytesIO()
@@ -3707,6 +4161,293 @@ def assistant_toggle(assistant_id):
         db.close()
 
 
+# ---- 教师移动控制台 ----
+
+@app.route('/mobile')
+@login_required
+def mobile_console():
+    """手机端 AI 导师课堂控制台。"""
+    return render_template('mobile_console.html')
+
+
+@app.route('/mobile/assistant/<int:assistant_id>')
+@login_required
+def mobile_assistant_console(assistant_id):
+    """手机端单个 AI 导师控制页。"""
+    db = SessionLocal()
+    try:
+        assistant = db.query(Task).filter_by(id=assistant_id, user_id=current_user.id, is_assistant=True).first()
+        if not assistant:
+            flash('AI 导师不存在或无权访问', 'danger')
+            return redirect(url_for('mobile_console'))
+        return render_template(
+            'mobile_assistant.html',
+            assistant=assistant,
+            blocked_keywords=_load_blocked_keywords(assistant.blocked_keywords),
+            summary=_mobile_assistant_summary(db, assistant),
+        )
+    finally:
+        db.close()
+
+
+@app.route('/api/mobile/assistants')
+@login_required
+def api_mobile_assistants():
+    """移动控制台：当前教师的全部 AI 导师。"""
+    db = SessionLocal()
+    try:
+        assistants = (
+            db.query(Task)
+            .filter_by(user_id=current_user.id, is_assistant=True)
+            .order_by(Task.created_at.desc())
+            .all()
+        )
+        return jsonify({
+            'code': 200,
+            'user': {
+                'display_name': current_user.display_name or current_user.username,
+                'username': current_user.username,
+            },
+            'items': [_mobile_assistant_summary(db, a) for a in assistants],
+        })
+    finally:
+        db.close()
+
+
+@app.route('/api/mobile/assistant/<int:assistant_id>/status', methods=['POST'])
+@login_required
+def api_mobile_assistant_status(assistant_id):
+    """移动控制台：紧急熔断 / 重新启用。"""
+    db = SessionLocal()
+    try:
+        assistant = db.query(Task).filter_by(id=assistant_id, user_id=current_user.id, is_assistant=True).first()
+        if not assistant:
+            return jsonify({'success': False, 'message': 'AI 导师不存在'}), 404
+        body = request.get_json(silent=True) or {}
+        status = (body.get('status') or '').strip()
+        if status not in ('active', 'disabled'):
+            status = 'disabled' if assistant.status == 'active' else 'active'
+        assistant.status = status
+        db.commit()
+        return jsonify({
+            'success': True,
+            'status': assistant.status,
+            'message': '已启用' if assistant.status == 'active' else '已紧急熔断，学生暂时无法访问',
+        })
+    finally:
+        db.close()
+
+
+@app.route('/api/mobile/assistant/<int:assistant_id>/settings', methods=['POST'])
+@login_required
+def api_mobile_assistant_settings(assistant_id):
+    """移动控制台：保存课堂常用开关。"""
+    db = SessionLocal()
+    try:
+        assistant = db.query(Task).filter_by(id=assistant_id, user_id=current_user.id, is_assistant=True).first()
+        if not assistant:
+            return jsonify({'success': False, 'message': 'AI 导师不存在'}), 404
+        body = request.get_json(silent=True) or {}
+        for field in ('allow_image_input', 'allow_file_upload', 'allow_image_generation'):
+            if field in body:
+                setattr(assistant, field, _truthy(body.get(field)))
+        if 'max_messages_per_student_daily' in body:
+            try:
+                limit = int(body.get('max_messages_per_student_daily') or 50)
+            except (TypeError, ValueError):
+                return jsonify({'success': False, 'message': '每日消息上限必须是数字'}), 400
+            if limit < 1 or limit > 500:
+                return jsonify({'success': False, 'message': '每日消息上限建议设置在 1-500 之间'}), 400
+            assistant.max_messages_per_student_daily = limit
+        db.commit()
+        return jsonify({'success': True, 'summary': _mobile_assistant_summary(db, assistant)})
+    finally:
+        db.close()
+
+
+@app.route('/api/mobile/assistant/<int:assistant_id>/link', methods=['POST'])
+@login_required
+def api_mobile_assistant_link(assistant_id):
+    """移动控制台：重置学生链接有效期。"""
+    db = SessionLocal()
+    try:
+        assistant = db.query(Task).filter_by(id=assistant_id, user_id=current_user.id, is_assistant=True).first()
+        if not assistant:
+            return jsonify({'success': False, 'message': 'AI 导师不存在'}), 404
+        body = request.get_json(silent=True) or {}
+        try:
+            hours = int(body.get('expires_hours') or 48)
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'message': '有效时长必须是数字'}), 400
+        if hours < 1 or hours > 168:
+            return jsonify({'success': False, 'message': '学生链接有效时长需要设置在 1-168 小时之间'}), 400
+        assistant.link_expires_at = datetime.now() + timedelta(hours=hours)
+        db.commit()
+        return jsonify({
+            'success': True,
+            'summary': _mobile_assistant_summary(db, assistant),
+            'message': f'学生链接有效期已重置为 {hours} 小时',
+        })
+    finally:
+        db.close()
+
+
+@app.route('/api/mobile/assistant/<int:assistant_id>/blacklist', methods=['POST'])
+@login_required
+def api_mobile_assistant_blacklist(assistant_id):
+    """移动控制台：保存黑名单分类与关键词。"""
+    db = SessionLocal()
+    try:
+        assistant = db.query(Task).filter_by(id=assistant_id, user_id=current_user.id, is_assistant=True).first()
+        if not assistant:
+            return jsonify({'success': False, 'message': 'AI 导师不存在'}), 404
+        body = request.get_json(silent=True) or {}
+        assistant.blocked_keywords = _mobile_blocked_keywords_json(
+            assistant.blocked_keywords,
+            body.get('categories') or body.get('blocked_keywords') or {},
+        )
+        db.commit()
+        return jsonify({
+            'success': True,
+            'blocked_keywords': _load_blocked_keywords(assistant.blocked_keywords),
+        })
+    finally:
+        db.close()
+
+
+@app.route('/api/mobile/assistant/<int:assistant_id>/alerts')
+@login_required
+def api_mobile_assistant_alerts(assistant_id):
+    """移动控制台：黑名单命中记录，供手机端轮询提醒。"""
+    db = SessionLocal()
+    try:
+        assistant = db.query(Task).filter_by(id=assistant_id, user_id=current_user.id, is_assistant=True).first()
+        if not assistant:
+            return jsonify({'code': 404, 'message': 'AI 导师不存在'}), 404
+        try:
+            since_id = int(request.args.get('since_id') or 0)
+        except ValueError:
+            since_id = 0
+        try:
+            limit = int(request.args.get('limit') or 20)
+        except ValueError:
+            limit = 20
+        limit = max(1, min(limit, 50))
+        q = (
+            db.query(Message, Conversation)
+            .join(Conversation, Message.conversation_id == Conversation.id)
+            .filter(Conversation.assistant_id == assistant.id)
+            .filter(Message.triggered_keyword.isnot(None))
+            .filter(Message.triggered_keyword != '')
+        )
+        if since_id > 0:
+            rows = q.filter(Message.id > since_id).order_by(Message.id.desc()).limit(limit).all()
+        else:
+            rows = q.order_by(Message.id.desc()).limit(limit).all()
+        items = []
+        max_id = since_id
+        for m, c in rows:
+            max_id = max(max_id, m.id)
+            content = (m.content or '').strip()
+            items.append({
+                'id': m.id,
+                'conversation_id': c.id,
+                'student_class': c.student_class,
+                'student_name': c.student_name,
+                'triggered_keyword': m.triggered_keyword,
+                'content': (content[:120] + '...') if len(content) > 120 else content,
+                'created_at': _dt_text(m.created_at, with_seconds=True),
+                'is_blocked': bool(c.is_blocked),
+            })
+        return jsonify({'code': 200, 'max_id': max_id, 'items': items})
+    finally:
+        db.close()
+
+
+@app.route('/api/mobile/assistant/<int:assistant_id>/students')
+@login_required
+def api_mobile_assistant_students(assistant_id):
+    """移动控制台：按学生聚合的最近使用与封禁状态。"""
+    db = SessionLocal()
+    try:
+        assistant = db.query(Task).filter_by(id=assistant_id, user_id=current_user.id, is_assistant=True).first()
+        if not assistant:
+            return jsonify({'code': 404, 'message': 'AI 导师不存在'}), 404
+        convs = db.query(Conversation).filter_by(assistant_id=assistant.id).order_by(Conversation.last_active_at.desc()).all()
+        students = {}
+        for c in convs:
+            key = (c.student_class, c.student_name)
+            if key not in students:
+                students[key] = {
+                    'student_class': c.student_class,
+                    'student_name': c.student_name,
+                    'session_count': 0,
+                    'msg_count': 0,
+                    'daily_message_count': 0,
+                    'blocked_hits': 0,
+                    'is_blocked_any': False,
+                    'last_active_ts': 0,
+                    'last_active_at': None,
+                    'last_content': '',
+                }
+            agg = students[key]
+            agg['session_count'] += 1
+            agg['daily_message_count'] += c.daily_message_count or 0
+            agg['is_blocked_any'] = agg['is_blocked_any'] or bool(c.is_blocked)
+            msg_count = len(c.messages)
+            agg['msg_count'] += msg_count
+            agg['blocked_hits'] += sum(1 for m in c.messages if m.triggered_keyword)
+            last = c.messages[-1] if c.messages else None
+            ts = c.last_active_at.timestamp() if c.last_active_at else 0
+            if ts > agg['last_active_ts']:
+                agg['last_active_ts'] = ts
+                agg['last_active_at'] = _dt_text(c.last_active_at)
+                agg['last_content'] = ((last.content or '')[:80] + '...') if last and last.content and len(last.content) > 80 else ((last.content or '') if last else '')
+        items = sorted(students.values(), key=lambda s: -s['last_active_ts'])
+        return jsonify({
+            'code': 200,
+            'daily_limit': assistant.max_messages_per_student_daily or 50,
+            'items': items,
+        })
+    finally:
+        db.close()
+
+
+@app.route('/api/mobile/assistant/<int:assistant_id>/student/block', methods=['POST'])
+@login_required
+def api_mobile_assistant_student_block(assistant_id):
+    """移动控制台：按学生身份显式封禁 / 解禁。"""
+    db = SessionLocal()
+    try:
+        assistant = db.query(Task).filter_by(id=assistant_id, user_id=current_user.id, is_assistant=True).first()
+        if not assistant:
+            return jsonify({'success': False, 'message': 'AI 导师不存在'}), 404
+        body = request.get_json(silent=True) or {}
+        class_name = (body.get('student_class') or '').strip()
+        student_name = (body.get('student_name') or '').strip()
+        target = _truthy(body.get('blocked'))
+        if not class_name or not student_name:
+            return jsonify({'success': False, 'message': '缺少班级或姓名'}), 400
+        convs = db.query(Conversation).filter_by(
+            assistant_id=assistant.id,
+            student_class=class_name,
+            student_name=student_name,
+        ).all()
+        if not convs:
+            return jsonify({'success': False, 'message': '没有匹配的学生会话'}), 404
+        for c in convs:
+            c.is_blocked = target
+        db.commit()
+        return jsonify({
+            'success': True,
+            'is_blocked': target,
+            'affected': len(convs),
+            'message': ('已封禁' if target else '已解禁') + f' {class_name} · {student_name}',
+        })
+    finally:
+        db.close()
+
+
 # ---- 模板导出 / 导入 / 克隆 ----
 
 OPENMENTOR_TEMPLATE_VERSION = '1.0'
@@ -3834,7 +4575,7 @@ def plaza():
 @app.route('/api/assistant/<int:assistant_id>/share_to_plaza', methods=['POST'])
 @login_required
 def assistant_share_to_plaza(assistant_id):
-    """老师把自己的 AI 导师配置 POST 到广场任务（quickform.cn）"""
+    """老师把自己的 AI 导师配置分享到公共广场。"""
     db = SessionLocal()
     try:
         assistant = db.query(Task).filter_by(
@@ -3870,26 +4611,28 @@ def assistant_share_to_plaza(assistant_id):
             'om_version': '1.1.4',
             'config': tpl,
         }
+
         try:
             resp = requests.post(OM_PLAZA_API_URL, json=plaza_payload, timeout=10)
             if resp.status_code != 200:
                 return jsonify({
                     'code': 500,
-                    'message': f'广场服务返回 HTTP {resp.status_code}: {resp.text[:200]}'
+                    'message': f'公共广场服务返回 HTTP {resp.status_code}: {resp.text[:200]}'
                 }), 500
         except requests.exceptions.RequestException as e:
-            logger.exception(f'分享 AI 导师到广场失败: {e}')
-            return jsonify({'code': 500, 'message': f'连接广场服务失败: {e}'}), 500
+            logger.exception(f'分享 AI 导师到公共广场失败: {e}')
+            return jsonify({'code': 500, 'message': f'连接公共广场服务失败: {e}'}), 500
 
         return jsonify({
             'code': 200,
             'success': True,
-            'message': '已成功分享到广场',
+            'message': '已成功分享到公共广场',
         })
     finally:
         db.close()
 
 
+@app.route('/api/plaza/clone', methods=['POST'])
 @app.route('/api/plaza/clone', methods=['POST'])
 @login_required
 def plaza_clone():

@@ -22,6 +22,44 @@
         letter-spacing: 0.02em;
     }
     .om-action i.bi { margin-right: 0; }
+    .om-mobile-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 1060;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+        background: rgba(20, 20, 19, 0.42);
+    }
+    .om-mobile-modal.show { display: flex; }
+    .om-mobile-dialog {
+        width: min(100%, 380px);
+        background: var(--om-paper);
+        border: 1px solid var(--om-border);
+        border-radius: 14px;
+        box-shadow: 0 16px 48px rgba(20, 17, 12, 0.2);
+        padding: 1.25rem;
+    }
+    .om-mobile-qr-box {
+        display: flex;
+        justify-content: center;
+        padding: 1rem;
+        margin: 0.75rem 0;
+        border-radius: 12px;
+        background: #fff;
+        border: 1px solid var(--om-border);
+    }
+    .om-mobile-url {
+        display: block;
+        width: 100%;
+        border: 1px solid var(--om-border-strong);
+        border-radius: 8px;
+        padding: 0.55rem 0.7rem;
+        color: var(--om-muted);
+        background: var(--om-cream-soft);
+        font-size: 0.82rem;
+    }
 </style>
 {% endblock %}
 
@@ -34,6 +72,9 @@
                 <p class="mb-0 text-muted small">配置专属 AI 助教，生成学生链接，扫码即用。</p>
             </div>
             <div class="d-flex gap-2">
+                <button type="button" class="btn btn-outline-primary" style="font-weight: 500;" onclick="openMobileConsoleQr()">
+                    <i class="bi bi-phone"></i> 移动控制台
+                </button>
                 <a href="{{ url_for('assistant_import') }}" class="btn btn-outline-primary" style="font-weight: 500;">
                     <i class="bi bi-cloud-upload"></i> 导入模板
                 </a>
@@ -139,6 +180,33 @@
     </div>
 </div>
 
+<div class="om-mobile-modal" id="mobileConsoleModal" role="dialog" aria-modal="true" aria-labelledby="mobileConsoleTitle" onclick="handleMobileModalBackdrop(event)">
+    <div class="om-mobile-dialog">
+        <div class="d-flex align-items-start justify-content-between gap-3">
+            <div>
+                <h5 class="mb-1" id="mobileConsoleTitle" style="font-weight: 700;">移动控制台</h5>
+                <p class="mb-0 text-muted small">扫码后登录教师账号，即可控制全部 AI 导师。</p>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeMobileConsoleQr()" aria-label="关闭">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+        <div class="om-mobile-qr-box">
+            <div id="mobileConsoleQr"></div>
+        </div>
+        <input id="mobileConsoleUrl" class="om-mobile-url" type="text" readonly value="{{ request.host_url.rstrip('/') }}{{ url_for('mobile_console') }}">
+        <div class="d-flex gap-2 mt-3">
+            <button type="button" class="btn btn-primary flex-fill" onclick="copyMobileConsoleUrl()">
+                <i class="bi bi-clipboard"></i> 复制链接
+            </button>
+            <a class="btn btn-outline-primary flex-fill" href="{{ url_for('mobile_console') }}" target="_blank" rel="noopener">
+                <i class="bi bi-box-arrow-up-right"></i> 打开
+            </a>
+        </div>
+        <p class="mt-3 mb-0 text-muted small">如果移动设备打不开，请先用电脑的局域网地址打开后台，再重新生成二维码。</p>
+    </div>
+</div>
+
 <script>
 function toggleAssistant(id, btn) {
     btn.disabled = true;
@@ -157,5 +225,50 @@ function toggleAssistant(id, btn) {
             btn.disabled = false;
         });
 }
+
+let mobileConsoleQrReady = false;
+
+function openMobileConsoleQr() {
+    const modal = document.getElementById('mobileConsoleModal');
+    modal.classList.add('show');
+    if (!mobileConsoleQrReady && window.QRCode) {
+        const target = document.getElementById('mobileConsoleQr');
+        target.innerHTML = '';
+        new QRCode(target, {
+            text: document.getElementById('mobileConsoleUrl').value,
+            width: 220,
+            height: 220,
+            correctLevel: QRCode.CorrectLevel.M
+        });
+        mobileConsoleQrReady = true;
+    }
+}
+
+function closeMobileConsoleQr() {
+    document.getElementById('mobileConsoleModal').classList.remove('show');
+}
+
+function handleMobileModalBackdrop(event) {
+    if (event.target.id === 'mobileConsoleModal') {
+        closeMobileConsoleQr();
+    }
+}
+
+function copyMobileConsoleUrl() {
+    const input = document.getElementById('mobileConsoleUrl');
+    navigator.clipboard.writeText(input.value)
+        .then(() => alert('移动控制台链接已复制'))
+        .catch(() => {
+            input.select();
+            document.execCommand('copy');
+            alert('移动控制台链接已复制');
+        });
+}
+
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+        closeMobileConsoleQr();
+    }
+});
 </script>
 {% endblock %}
