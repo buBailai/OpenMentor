@@ -306,8 +306,6 @@
         </div>
         
         {% if remote_prompt_matrix and remote_prompt_matrix.groups %}
-        {% if false %}
-        <!-- 旧版本地数据使用矩阵：暂时隐藏，保留代码用于对照或回退 -->
         <!-- 数据使用矩阵 -->
         <div class="card mb-4 border-0 shadow-sm" style="border-radius: 10px; overflow: hidden;">
             <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;">
@@ -325,7 +323,7 @@
                 <div class="om-matrix-head">
                     <div>
                         <h6 class="om-matrix-title">按使用场景复制提示词</h6>
-                        <p class="om-matrix-subtitle">按使用场景复制提示词；下方保留原本的本地矩阵，方便对比。</p>
+                        <p class="om-matrix-subtitle">查看用于确认用途，复制用于直接交给 AI，演示用于看操作视频。</p>
                     </div>
                 </div>
 
@@ -355,8 +353,9 @@
                 </div>
             </div>
         </div>
-        {% endif %}
 
+        {% if false %}
+        <!-- 旧版本地数据使用矩阵：暂时隐藏，保留代码用于对照或回退 -->
         <!-- 数据使用矩阵 -->
         <div class="card mb-4 border-0 shadow-sm" style="border-radius: 10px; overflow: hidden;">
             <div class="card-header">
@@ -461,6 +460,7 @@
                 </div>
             </div>
         </div>
+        {% endif %}
         {% endif %}
         
         <!-- 提交数据列表 -->
