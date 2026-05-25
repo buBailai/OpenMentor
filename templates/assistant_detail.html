@@ -62,13 +62,35 @@
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.5rem;">
                     <div>
                         <h4 style="margin:0; color:#141413; font-weight:700;"><i class="bi bi-broadcast"></i> 分享到 AI 导师广场</h4>
-                        <p style="margin:0.25rem 0 0; color:#6B6760; font-size:0.9rem;">让好的 AI 导师被更多老师复用</p>
+                        <p style="margin:0.25rem 0 0; color:#6B6760; font-size:0.9rem;">选择分享位置，让好的 AI 导师被更多老师复用</p>
                     </div>
                     <button type="button" id="om-share-close" style="background:transparent; border:none; font-size:1.5rem; color:#94918B; cursor:pointer; padding:0 0.25rem;">×</button>
                 </div>
 
                 <div style="background:#F2DCD9; border:1px solid rgba(184,70,62,0.25); color:#7A2A26; padding:0.6rem 0.875rem; border-radius:8px; font-size:0.85rem; margin:0.75rem 0 1rem;">
-                    ⚠️ <strong>请先确认：</strong>分享到公共广场后<strong>不可撤回 / 不可编辑</strong>。请先检查 system prompt 是否含真实姓名 / 学校 / 学生信息等敏感内容。
+                    ⚠️ <strong>请先确认：</strong>分享到公共广场后<strong>不可撤回 / 不可编辑</strong>；校内广场仅本校可见，管理员可禁用或启用。请先检查 system prompt 是否含真实姓名 / 学校 / 学生信息等敏感内容。
+                </div>
+
+                <div class="mb-3">
+                    <label class="fw-semibold mb-2" style="font-size:0.92rem;">分享方式 <span class="text-danger">*</span></label>
+                    <div style="display:grid; gap:0.55rem;">
+                        <label style="display:flex; gap:0.6rem; align-items:flex-start; padding:0.65rem 0.75rem; border:1px solid #E5E0D8; border-radius:8px; cursor:pointer;">
+                            <input type="checkbox" class="form-check-input om-share-destination" value="public" checked style="margin-top:0.2rem;">
+                            <span>
+                                <span style="display:block; font-weight:650; color:#141413;">公共广场</span>
+                                <span style="display:block; color:#6B6760; font-size:0.84rem;">全国 OpenMentor 老师可见，沿用原来的公共广场分享方式。</span>
+                            </span>
+                        </label>
+                        {% if om_is_campus %}
+                        <label style="display:flex; gap:0.6rem; align-items:flex-start; padding:0.65rem 0.75rem; border:1px solid #E5E0D8; border-radius:8px; cursor:pointer;">
+                            <input type="checkbox" class="form-check-input om-share-destination" value="campus" checked style="margin-top:0.2rem;">
+                            <span>
+                                <span style="display:block; font-weight:650; color:#141413;">校内广场</span>
+                                <span style="display:block; color:#6B6760; font-size:0.84rem;">保存到本校服务器，校园版教师可复用，管理员可禁用或启用。</span>
+                            </span>
+                        </label>
+                        {% endif %}
+                    </div>
                 </div>
 
                 <div class="mb-3">
@@ -130,6 +152,7 @@
             var elSubmit = byId('om-share-submit');
             var btnClose = byId('om-share-close');
             var btnCancel = byId('om-share-cancel');
+            var destinationInputs = Array.prototype.slice.call(document.querySelectorAll('.om-share-destination'));
 
             function openModal(){
                 elError.style.display = 'none';
@@ -152,6 +175,12 @@
                 if (!subject || !grade || !purpose) {
                     showError('学科 / 学段 / 用途都是必填'); return;
                 }
+                var destinations = destinationInputs
+                    .filter(function(input){ return input.checked; })
+                    .map(function(input){ return input.value; });
+                if (!destinations.length) {
+                    showError('请至少选择一个分享方式'); return;
+                }
                 elError.style.display = 'none';
                 elSubmit.disabled = true;
                 elSubmit.innerHTML = '<i class="bi bi-hourglass-split"></i> 分享中…';
@@ -164,6 +193,7 @@
                             description: (elDesc.value || '').trim(),
                             nickname: (elNickname.value || '').trim(),
                             school: (elSchool.value || '').trim(),
+                            destinations: destinations,
                         }),
                     });
                     var data = await resp.json().catch(function(){ return {}; });

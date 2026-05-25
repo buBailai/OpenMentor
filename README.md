@@ -8,7 +8,7 @@
 <p align="center">
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-brightgreen" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+">
-  <img src="https://img.shields.io/badge/version-V1.3.0-D97757" alt="V1.3.0">
+  <img src="https://img.shields.io/badge/version-V1.4.0-D97757" alt="V1.4.0">
 </p>
 
 ---
@@ -35,11 +35,9 @@ OpenMentor 是基于 [QuickForm 2.0](https://github.com/wstlab/quickform) 二次
 
 ### 推荐 ①：Windows 免安装包（最快 · 双击即用）
 
-Windows 用户从 [**📘 OpenMentor 教程文档**](https://scnxnljz0ey0.feishu.cn/docx/I8qxdpNdPo38xJxsaiscMC09n6g)（已上传免安装包和代码包）下载单独发布的 `OpenMentor_V1.3.0_个人版_免安装包`，解压后**直接双击 `OpenMentor启动器.bat`** 即可运行项目，无需手动装 Python 或 pip。
+Windows 用户从 [**📘 OpenMentor 教程文档**](https://scnxnljz0ey0.feishu.cn/docx/I8qxdpNdPo38xJxsaiscMC09n6g)（已上传免安装包和代码包）下载 `OpenMentor_V1.4.0_个人版_免安装包.zip`，解压后**直接双击 `OpenMentor启动器.bat`** 即可自动安装依赖并运行项目，无需手动装 Python 或 pip。
 
 启动后会先弹出「OpenMentor 一键部署安装程序」自动补齐依赖，随后自动打开「OpenMentor 启动器」界面，点「启动服务」即可使用。
-
-> GitHub 源码仓库只保留纯代码，不包含 Windows 免安装包内的 `env`、`wheels` 和图形启动器文件。
 
 ### 推荐 ②：让 AI Agent 帮你装（适合纯代码版本 / macOS / Linux）
 
@@ -130,6 +128,8 @@ OpenMentor/
 ├── USAGE.md                # 使用手册（面向老师）
 ├── NOTICE.md               # 开源归属声明
 ├── LICENSE                 # MIT License
+├── openmentor.db           # SQLite 数据库（首次启动自动生成）
+├── docs/images/            # 文档插图（README / INSTALL 引用的截图）
 ├── static/                 # 静态资源（含 PWA：manifest.json / sw.js / pwa-register.js）
 │   ├── css/                # Bootstrap + 自定义样式
 │   ├── js/                 # Bootstrap bundle

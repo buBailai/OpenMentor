@@ -3,6 +3,25 @@
 
 {% block title %}对话审计 - {{ assistant.title }} - {{ get_app_name() }}{% endblock %}
 
+{% block styles %}
+{{ super() }}
+<style>
+    .audit-actions {
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0.3rem;
+        white-space: nowrap;
+    }
+    .audit-actions .btn {
+        padding: 0.22rem 0.46rem;
+        font-size: 0.76rem;
+        line-height: 1.2;
+        border-radius: 6px;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-lg-12">
@@ -83,8 +102,11 @@
         <div class="card">
             <div class="card-header" style="background-color: #F7F4EC; border-bottom: 1px solid #E5E0D8; font-weight: 600;">
                 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                    <span><i class="bi bi-people"></i> 学生会话 <span id="last-update" class="text-muted small fw-normal ms-2"></span></span>
-                    <span id="filter-count" class="text-muted small fw-normal" style="display:none;"></span>
+	                    <span><i class="bi bi-people"></i> 学生会话 <span id="last-update" class="text-muted small fw-normal ms-2"></span></span>
+	                    <span>
+	                        <span id="selected-count" class="text-muted small fw-normal me-2" style="display:none;"></span>
+	                        <span id="filter-count" class="text-muted small fw-normal" style="display:none;"></span>
+	                    </span>
                 </div>
                 <!-- B10: 筛选条（一行：搜索 + 班级 + 状态 + 清除） -->
                 <div class="d-flex gap-2 align-items-center flex-nowrap mt-2" style="font-weight: 400;">
@@ -107,21 +129,24 @@
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
-                    <table class="table table-hover align-middle mb-0">
-                        <thead style="background-color: #F7F4EC;">
-                            <tr>
-                                <th style="font-size: 0.875rem; color: #6B6760;">班级 / 姓名</th>
-                                <th style="font-size: 0.875rem; color: #6B6760;">消息</th>
-                                <th style="font-size: 0.875rem; color: #6B6760;">今日额度</th>
+	                    <table class="table table-hover align-middle mb-0">
+	                        <thead style="background-color: #F7F4EC;">
+	                            <tr>
+	                                <th style="width: 42px; font-size: 0.875rem; color: #6B6760;">
+	                                    <input class="form-check-input" type="checkbox" id="select-visible-students" title="全选当前筛选结果">
+	                                </th>
+	                                <th style="font-size: 0.875rem; color: #6B6760;">班级 / 姓名</th>
+	                                <th style="font-size: 0.875rem; color: #6B6760;">消息</th>
+	                                <th style="font-size: 0.875rem; color: #6B6760;">今日额度</th>
                                 <th style="font-size: 0.875rem; color: #6B6760;">最近活动</th>
                                 <th style="font-size: 0.875rem; color: #6B6760;">最后内容预览</th>
                                 <th style="font-size: 0.875rem; color: #6B6760;">状态</th>
-                                <th style="font-size: 0.875rem; color: #6B6760; text-align: right;">操作</th>
+	                                <th style="font-size: 0.875rem; color: #6B6760; text-align: right; min-width: 138px;">操作</th>
                             </tr>
                         </thead>
                         <tbody id="conv-tbody">
-                            <tr><td colspan="7" class="text-center text-muted py-4">加载中...</td></tr>
-                        </tbody>
+	                            <tr><td colspan="8" class="text-center text-muted py-4">加载中...</td></tr>
+	                        </tbody>
                     </table>
                 </div>
             </div>
@@ -133,13 +158,45 @@
 (function () {
     const ASSISTANT_ID = {{ assistant.id }};
     const apiUrl = `/api/assistant/${ASSISTANT_ID}/audit/conversations`;
-    const tbody = document.getElementById('conv-tbody');
-    const lastUpdate = document.getElementById('last-update');
-    let allStudents = [];   // B10: 缓存当前最新一拉的学生列表，用于本地筛选
+	    const tbody = document.getElementById('conv-tbody');
+	    const lastUpdate = document.getElementById('last-update');
+	    let allStudents = [];   // B10: 缓存当前最新一拉的学生列表，用于本地筛选
+	    let currentFilteredStudents = [];
+	    const selectedStudents = new Map();
+	    const DEFAULT_STUDENT_REPORT_INSTRUCTION = `请基于这位学生与 AI 导师的真实对话，生成一份给老师看的学情报告。重点关注：知识盲点、提问习惯、是否过度依赖 AI 直接要答案、是否触发安全风险、下一步可以怎样辅导。请避免空泛评价，尽量引用学生原话作为依据。`;
+	    const DEFAULT_GROUP_REPORT_INSTRUCTION = `请基于选中学生与 AI 导师的真实对话，生成一份给老师看的学情报告。重点关注：共性知识盲点、不同学生的典型问题、AI 使用方式是否合理、需要重点关注的学生，以及下一步教学调整建议。请避免千篇一律，尽量结合本次对话证据。`;
 
-    function escapeHtml(s) {
-        return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    }
+	    function escapeHtml(s) {
+	        return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+	    }
+
+	    function studentKey(cls, name) {
+	        return `${cls || ''}\u001f${name || ''}`;
+	    }
+
+	    function studentPayload(s) {
+	        return {
+	            student_class: s.student_class || '',
+	            student_name: s.student_name || '',
+	            msg_count: s.msg_count || 0,
+	        };
+	    }
+
+	    function selectedList() {
+	        return Array.from(selectedStudents.values());
+	    }
+
+	    function selectedMsgCount() {
+	        return selectedList().reduce((sum, s) => sum + (s.msg_count || 0), 0);
+	    }
+
+	    function pruneSelections() {
+	        const live = new Map(allStudents.map(s => [studentKey(s.student_class, s.student_name), s]));
+	        Array.from(selectedStudents.keys()).forEach(k => {
+	            if (!live.has(k)) selectedStudents.delete(k);
+	            else selectedStudents.set(k, studentPayload(live.get(k)));
+	        });
+	    }
 
     function getFilters() {
         return {
@@ -173,11 +230,12 @@
         if (classes.includes(prev)) sel.value = prev;  // 保持选中
     }
 
-    function renderTable() {
-        const f = getFilters();
-        const filtered = applyFilters(allStudents, f);
+	    function renderTable() {
+	        const f = getFilters();
+	        const filtered = applyFilters(allStudents, f);
+	        currentFilteredStudents = filtered;
 
-        // 计数 + 清除按钮
+	        // 计数 + 清除按钮
         const cntEl = document.getElementById('filter-count');
         const clrBtn = document.getElementById('filter-clear');
         const isFiltered = !!(f.q || f.cls || f.status);
@@ -190,16 +248,43 @@
             clrBtn.style.display = 'none';
         }
 
-        if (allStudents.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">还没有学生进入对话。让学生扫码试试吧 →</td></tr>`;
-            return;
-        }
-        if (filtered.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">没有匹配筛选条件的学生</td></tr>`;
-            return;
-        }
-        tbody.innerHTML = filtered.map(renderRow).join('');
-    }
+	        if (allStudents.length === 0) {
+	            tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">还没有学生进入对话。让学生扫码试试吧 →</td></tr>`;
+	            updateSelectionUi();
+	            return;
+	        }
+	        if (filtered.length === 0) {
+	            tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">没有匹配筛选条件的学生</td></tr>`;
+	            updateSelectionUi();
+	            return;
+	        }
+	        tbody.innerHTML = filtered.map(renderRow).join('');
+	        updateSelectionUi();
+	    }
+
+	    function updateSelectionUi() {
+	        const countEl = document.getElementById('selected-count');
+	        const selectAll = document.getElementById('select-visible-students');
+	        const selectedCount = selectedStudents.size;
+	        if (selectedCount > 0) {
+	            countEl.textContent = `已选 ${selectedCount} 名学生`;
+	            countEl.style.display = '';
+	        } else {
+	            countEl.style.display = 'none';
+	        }
+
+	        if (!selectAll) return;
+	        if (currentFilteredStudents.length === 0) {
+	            selectAll.checked = false;
+	            selectAll.indeterminate = false;
+	            selectAll.disabled = true;
+	            return;
+	        }
+	        selectAll.disabled = false;
+	        const visibleChecked = currentFilteredStudents.filter(s => selectedStudents.has(studentKey(s.student_class, s.student_name))).length;
+	        selectAll.checked = visibleChecked === currentFilteredStudents.length;
+	        selectAll.indeterminate = visibleChecked > 0 && visibleChecked < currentFilteredStudents.length;
+	    }
 
     function renderRow(s) {
         const blockedBadge = s.blocked_hits > 0 ? `<span class="badge bg-warning text-dark ms-1" title="该学生有 ${s.blocked_hits} 条触发黑名单"><i class="bi bi-exclamation-triangle"></i> ${s.blocked_hits}</span>` : '';
@@ -214,27 +299,41 @@
             ? `<div style="font-size:0.825rem; color:#6B6760; max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(s.last_content)}">${roleIcon} ${escapeHtml(s.last_content)}</div>`
             : '<span class="text-muted small">—</span>';
         const detailHref = `/assistant/${ASSISTANT_ID}/audit/${s.primary_session_id}`;
-        const blockOnclick = s.session_count > 1
-            ? `toggleBlockStudentByName(${JSON.stringify(s.student_class)}, ${JSON.stringify(s.student_name)}, ${s.is_blocked_any ? 'true' : 'false'}, this)`
-            : `toggleBlockStudent(${s.primary_session_id}, this)`;
-        return `
-        <tr>
-            <td>
-                <div style="font-weight:600; color:var(--om-ink);">${escapeHtml(s.student_name)}${deviceBadge}</div>
-                <div style="font-size:0.75rem; color:var(--om-muted);">${escapeHtml(s.student_class)}</div>
+	        const blockOnclick = s.session_count > 1
+	            ? `toggleBlockStudentByName(${JSON.stringify(s.student_class)}, ${JSON.stringify(s.student_name)}, ${s.is_blocked_any ? 'true' : 'false'}, this)`
+	            : `toggleBlockStudent(${s.primary_session_id}, this)`;
+	        const key = studentKey(s.student_class, s.student_name);
+	        const checked = selectedStudents.has(key) ? 'checked' : '';
+	        return `
+	        <tr>
+	            <td>
+	                <input class="form-check-input student-select" type="checkbox"
+	                       data-class="${escapeHtml(s.student_class)}"
+	                       data-name="${escapeHtml(s.student_name)}" ${checked}>
+	            </td>
+	            <td>
+	                <div style="font-weight:600; color:var(--om-ink);">${escapeHtml(s.student_name)}${deviceBadge}</div>
+	                <div style="font-size:0.75rem; color:var(--om-muted);">${escapeHtml(s.student_class)}</div>
             </td>
             <td><span style="font-weight:600;">${s.user_msg_count}</span> ${blockedBadge}</td>
             <td><span class="${s.daily_message_count >= s.daily_limit ? 'text-danger' : (s.daily_message_count >= s.daily_limit - 5 ? 'text-warning' : 'text-muted')}">${s.daily_message_count} / ${s.daily_limit}</span></td>
             <td><small class="text-muted">${escapeHtml(s.last_active_at || '—')}</small></td>
-            <td>${lastBubble}</td>
-            <td>${stuBlocked || '<span class="badge bg-success">活跃</span>'}</td>
-            <td style="text-align:right;">
-                <a href="${detailHref}" class="btn btn-sm btn-outline-primary">查看对话</a>
-                <button class="btn btn-sm btn-outline-${s.is_blocked_any ? 'success' : 'danger'} ms-1"
-                        onclick='${blockOnclick}' title="${s.is_blocked_any ? '解禁该学生' : '封禁该学生'}">
-                    ${s.is_blocked_any ? '解禁' : '封禁'}
-                </button>
-            </td>
+	            <td>${lastBubble}</td>
+	            <td>${stuBlocked || '<span class="badge bg-success">活跃</span>'}</td>
+	            <td style="text-align:right; white-space:nowrap;">
+	                <div class="audit-actions">
+	                <a href="${detailHref}" class="btn btn-outline-primary">查看</a>
+	                <button class="btn btn-outline-primary student-report-btn"
+	                        data-class="${escapeHtml(s.student_class)}"
+	                        data-name="${escapeHtml(s.student_name)}">
+	                    报告
+	                </button>
+	                <button class="btn btn-outline-${s.is_blocked_any ? 'success' : 'danger'}"
+	                        onclick='${blockOnclick}' title="${s.is_blocked_any ? '解禁该学生' : '封禁该学生'}">
+	                    ${s.is_blocked_any ? '解禁' : '封禁'}
+	                </button>
+	                </div>
+	            </td>
         </tr>`;
     }
 
@@ -282,10 +381,11 @@
                 ? '<span class="badge bg-success">启用中</span>'
                 : (status === 'disabled' ? '<span class="badge bg-danger">已禁用</span>' : '<span class="badge bg-secondary">未知</span>');
 
-            // B10: 缓存最新数据 → 同步班级下拉 → 重渲染（应用当前筛选）
-            allStudents = data.students || [];
-            syncClassDropdown(allStudents);
-            renderTable();
+	            // B10: 缓存最新数据 → 同步班级下拉 → 重渲染（应用当前筛选）
+	            allStudents = data.students || [];
+	            pruneSelections();
+	            syncClassDropdown(allStudents);
+	            renderTable();
             const now = new Date();
             lastUpdate.textContent = `· 更新于 ${now.toLocaleTimeString('zh-CN')}`;
         } catch (e) {
@@ -305,9 +405,9 @@
     };
 
     // B8: 多设备的学生整体封禁/解禁
-    window.toggleBlockStudentByName = function (className, studentName, currentlyBlocked, btn) {
-        if (!confirm(currentlyBlocked
-            ? `确定解禁 ${className} · ${studentName} 在所有设备上的会话吗？`
+	    window.toggleBlockStudentByName = function (className, studentName, currentlyBlocked, btn) {
+	        if (!confirm(currentlyBlocked
+	            ? `确定解禁 ${className} · ${studentName} 在所有设备上的会话吗？`
             : `确定封禁 ${className} · ${studentName} 在所有设备上的会话吗？`)) return;
         btn.disabled = true;
         const fd = new FormData();
@@ -320,10 +420,37 @@
                 if (d.success) refresh();
                 else { alert(d.message || '失败'); btn.disabled = false; }
             })
-            .catch(() => { alert('网络异常'); btn.disabled = false; });
-    };
+	            .catch(() => { alert('网络异常'); btn.disabled = false; });
+	    };
 
-    document.getElementById('btn-refresh').addEventListener('click', refresh);
+	    tbody.addEventListener('change', function (e) {
+	        const checkbox = e.target.closest('.student-select');
+	        if (!checkbox) return;
+	        const cls = checkbox.getAttribute('data-class') || '';
+	        const name = checkbox.getAttribute('data-name') || '';
+	        const key = studentKey(cls, name);
+	        const source = allStudents.find(s => studentKey(s.student_class, s.student_name) === key) || {student_class: cls, student_name: name};
+	        if (checkbox.checked) selectedStudents.set(key, studentPayload(source));
+	        else selectedStudents.delete(key);
+	        updateSelectionUi();
+	    });
+
+	    tbody.addEventListener('click', function (e) {
+	        const btn = e.target.closest('.student-report-btn');
+	        if (!btn) return;
+	        generateStudentReportByName(btn.getAttribute('data-class') || '', btn.getAttribute('data-name') || '', btn);
+	    });
+
+	    document.getElementById('select-visible-students').addEventListener('change', function () {
+	        currentFilteredStudents.forEach(s => {
+	            const key = studentKey(s.student_class, s.student_name);
+	            if (this.checked) selectedStudents.set(key, studentPayload(s));
+	            else selectedStudents.delete(key);
+	        });
+	        renderTable();
+	    });
+
+	    document.getElementById('btn-refresh').addEventListener('click', refresh);
 
     // B10 筛选：input/select 都触发本地重渲染（不重新调 API）
     let qDebounce = null;
@@ -340,31 +467,117 @@
         renderTable();
     });
 
-    // B13 + B19: 生成全班 AI 学情报告（流式）
-    document.getElementById('btn-class-report').addEventListener('click', function () {
-        var btn = this;
-        var origLabel = btn.innerHTML;
-        var classFilter = document.getElementById('filter-class').value || '';
-        var scopeLabel = classFilter ? `班级「${classFilter}」` : '全部学生';
-        var inScope = applyFilters(allStudents, {q: '', cls: classFilter, status: ''});
-        var stuCount = inScope.length;
-        var msgCount = inScope.reduce((s, x) => s + (x.msg_count || 0), 0);
-        if (stuCount === 0) { alert('当前范围没有可分析的学生'); return; }
-        if (!confirm(`将基于 ${scopeLabel} 共 ${stuCount} 名学生 / ${msgCount} 条消息生成报告。\n\n这会调用一次 AI（消耗 token）。是否继续？`)) return;
+	    function safeFilenameSegment(text) {
+	        return String(text || 'report').replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
+	    }
 
-        btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>AI 生成中...';
-        var fd = new FormData();
-        if (classFilter) fd.append('class_name', classFilter);
-        fd.append('stream', '1');
+	    function openReportPromptModal(opts) {
+	        return new Promise(resolve => {
+	            var existing = document.getElementById('om-report-prompt-modal');
+	            if (existing) existing.remove();
+	            var wrap = document.createElement('div');
+	            wrap.id = 'om-report-prompt-modal';
+	            wrap.style.cssText = 'position:fixed;inset:0;background:rgba(20,17,12,0.55);z-index:1100;display:flex;align-items:center;justify-content:center;padding:1rem;';
+	            wrap.innerHTML = `
+	                <div style="background:var(--om-paper);border-radius:14px;max-width:720px;width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--om-border);">
+	                    <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:1rem 1.25rem;border-bottom:1px solid var(--om-border);gap:1rem;">
+	                        <div style="min-width:0;flex:1;">
+	                            <h4 style="margin:0;color:var(--om-ink);font-weight:600;font-size:1.05rem;"><i class="bi bi-magic"></i> 确认报告生成要求</h4>
+	                            <p style="margin:0.25rem 0 0;color:var(--om-muted);font-size:0.82rem;" id="om-rp-subtitle"></p>
+	                        </div>
+	                        <button type="button" id="om-rp-close" style="background:transparent;border:none;font-size:1.4rem;color:var(--om-muted);cursor:pointer;padding:0 0.4rem;line-height:1;">×</button>
+	                    </div>
+	                    <div style="padding:1rem 1.25rem;overflow-y:auto;">
+	                        <label class="form-label fw-semibold">本次报告要求</label>
+	                        <textarea id="om-rp-instruction" class="form-control" rows="9" style="border-radius:8px;line-height:1.65;"></textarea>
+	                        <div class="form-text mt-2" style="color:var(--om-muted);">这里会作为本次报告的重点要求发送给 AI。可以按课堂目标、学生表现或报告用途临时修改。</div>
+	                    </div>
+	                    <div style="padding:0.75rem 1.25rem;border-top:1px solid var(--om-border);display:flex;gap:0.5rem;justify-content:flex-end;">
+	                        <button type="button" id="om-rp-cancel" class="btn btn-secondary btn-sm">取消</button>
+	                        <button type="button" id="om-rp-confirm" class="btn btn-primary btn-sm">开始生成</button>
+	                    </div>
+	                </div>`;
+	            document.body.appendChild(wrap);
+	            document.getElementById('om-rp-subtitle').textContent = opts.subtitle || '';
+	            document.getElementById('om-rp-instruction').value = opts.defaultInstruction || '';
+	            const close = () => { wrap.remove(); resolve(null); };
+	            document.getElementById('om-rp-close').onclick = close;
+	            document.getElementById('om-rp-cancel').onclick = close;
+	            wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
+	            document.getElementById('om-rp-confirm').onclick = () => {
+	                const value = (document.getElementById('om-rp-instruction').value || '').trim();
+	                wrap.remove();
+	                resolve(value);
+	            };
+	            setTimeout(() => document.getElementById('om-rp-instruction').focus(), 50);
+	        });
+	    }
 
-        streamReport(`/assistant/${ASSISTANT_ID}/audit/class_report`, fd, {
-            scope: 'class',
-            buildTitle: (m) => `${m.assistant_title} · ${m.scope_label || (classFilter || '全部学生')} · 学情报告`,
-            buildSubtitle: (m) => `${m.student_count || 0} 名学生 · ${m.message_count || 0} 条消息${m.omitted_students ? ' · 已截断 ' + m.omitted_students + ' 名学生' : ''} · 由 ${m.model_used || ''} 流式生成中...`,
-            buildFilename: (m) => `${m.assistant_title}_${classFilter || '全部'}_学情报告_${new Date().toISOString().slice(0,10)}.md`,
-        }).finally(() => { btn.disabled = false; btn.innerHTML = origLabel; });
-    });
+	    window.generateStudentReportByName = async function (className, studentName, btn) {
+	        const source = allStudents.find(s => s.student_class === className && s.student_name === studentName);
+	        const msgCount = source ? (source.msg_count || 0) : 0;
+	        const instruction = await openReportPromptModal({
+	            subtitle: `${className} · ${studentName} · ${msgCount} 条消息`,
+	            defaultInstruction: DEFAULT_STUDENT_REPORT_INSTRUCTION,
+	        });
+	        if (instruction === null) return;
+
+	        var origLabel = btn.innerHTML;
+	        btn.disabled = true;
+	        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>生成中';
+	        var fd = new FormData();
+	        fd.append('student_class', className);
+	        fd.append('student_name', studentName);
+	        fd.append('report_instruction', instruction);
+	        fd.append('stream', '1');
+
+	        streamReport(`/assistant/${ASSISTANT_ID}/audit/student_report`, fd, {
+	            scope: 'student',
+	            buildTitle: (m) => `${m.student_class || className} · ${m.student_name || studentName} · 学情报告`,
+	            buildSubtitle: (m) => `${m.session_count || 0} 个会话 · ${m.message_count || 0} 条消息 · 由 ${m.model_used || ''} 流式生成中...`,
+	            buildFilename: (m) => `${safeFilenameSegment((m.student_class || className) + '_' + (m.student_name || studentName))}_学情报告_${new Date().toISOString().slice(0,10)}.md`,
+	        }).finally(() => { btn.disabled = false; btn.innerHTML = origLabel; });
+	    };
+
+	    // B13 + B19: 生成选中学生 / 班级 / 全部 AI 学情报告（流式）
+	    document.getElementById('btn-class-report').addEventListener('click', async function () {
+	        var btn = this;
+	        var origLabel = btn.innerHTML;
+	        var classFilter = document.getElementById('filter-class').value || '';
+	        var chosen = selectedList();
+	        var hasSelection = chosen.length > 0;
+	        var scopeLabel = hasSelection ? `已选 ${chosen.length} 名学生` : (classFilter ? `班级「${classFilter}」` : '全部学生');
+	        var inScope = hasSelection ? chosen : applyFilters(allStudents, {q: '', cls: classFilter, status: ''});
+	        var stuCount = inScope.length;
+	        var msgCount = hasSelection ? selectedMsgCount() : inScope.reduce((s, x) => s + (x.msg_count || 0), 0);
+	        if (stuCount === 0) { alert('当前范围没有可分析的学生'); return; }
+	        var instruction = await openReportPromptModal({
+	            subtitle: `${scopeLabel} · ${stuCount} 名学生 · ${msgCount} 条消息`,
+	            defaultInstruction: DEFAULT_GROUP_REPORT_INSTRUCTION,
+	        });
+	        if (instruction === null) return;
+
+	        btn.disabled = true;
+	        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>AI 生成中...';
+	        var fd = new FormData();
+	        if (hasSelection) {
+	            fd.append('selected_students', JSON.stringify(chosen.map(s => ({
+	                student_class: s.student_class,
+	                student_name: s.student_name,
+	            }))));
+	        } else if (classFilter) {
+	            fd.append('class_name', classFilter);
+	        }
+	        fd.append('report_instruction', instruction);
+	        fd.append('stream', '1');
+
+	        streamReport(`/assistant/${ASSISTANT_ID}/audit/class_report`, fd, {
+	            scope: 'class',
+	            buildTitle: (m) => `${m.assistant_title} · ${m.scope_label || scopeLabel} · 学情报告`,
+	            buildSubtitle: (m) => `${m.student_count || 0} 名学生 · ${m.message_count || 0} 条消息${m.omitted_students ? ' · 已截断 ' + m.omitted_students + ' 名学生' : ''} · 由 ${m.model_used || ''} 流式生成中...`,
+	            buildFilename: (m) => `${safeFilenameSegment((m.assistant_title || 'AI导师') + '_' + (m.scope_label || scopeLabel))}_学情报告_${new Date().toISOString().slice(0,10)}.md`,
+	        }).finally(() => { btn.disabled = false; btn.innerHTML = origLabel; });
+	    });
 
     // B19: 流式报告读取器（共用）
     async function streamReport(url, formData, opts) {

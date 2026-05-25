@@ -244,6 +244,8 @@
                     <strong class="d-block mb-2">已上传文件（{{ task.attachments|length }}个）：</strong>
                     {% if task.attachments %}
                     {% for attachment in task.attachments %}
+                    {% set attachment_ext = attachment.file_name.rsplit('.', 1)[1].lower() if '.' in attachment.file_name else '' %}
+                    {% set is_html_attachment = attachment_ext in ['html', 'htm'] %}
                     <div class="d-inline-flex align-items-center me-2 mb-2">
                         <a href="/static/uploads/{{ attachment.file_path.split('/')[-1].split('\\')[-1] }}" target="_blank" class="btn" style="font-weight: 500; border-radius: 8px 0 0 8px; padding: 0.5rem 1rem; transition: all 0.3s ease;">
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-file-earmark" viewBox="0 0 16 16">
@@ -251,6 +253,17 @@
                             </svg>
                             {{ attachment.file_name }}
                         </a>
+                        {% if is_html_attachment %}
+                        <a href="{{ url_for('edit_task_html_attachment', task_id=task.id, attachment_id=attachment.id) }}" class="btn" style="background-color: #F7F4EC; color: #2D2A24; border-left: 1px solid #E5E0D8; border-radius: 0; padding: 0.5rem 0.75rem; white-space: nowrap;" title="在线编辑 HTML">
+                            <i class="bi bi-pencil-square"></i> 编辑
+                        </a>
+	                        <a href="{{ url_for('edit_task_html_attachment', task_id=task.id, attachment_id=attachment.id, action='repair') }}" class="btn" style="background-color: #F5E6DD; color: #A04D38; border-left: 1px solid #E5E0D8; border-radius: 0; padding: 0.5rem 0.75rem; white-space: nowrap;" title="检测并替换旧 API / AI 导师链接">
+	                            <i class="bi bi-arrow-repeat"></i> 修复链接
+	                        </a>
+	                        <a href="/static/uploads/{{ attachment.file_path.split('/')[-1].split('\\')[-1] }}" download="{{ attachment.file_name }}" class="btn" style="background-color: #F7F4EC; color: #2D2A24; border-left: 1px solid #E5E0D8; border-radius: 0; padding: 0.5rem 0.75rem; white-space: nowrap;" title="下载 HTML 文件">
+	                            <i class="bi bi-download"></i> 下载
+	                        </a>
+	                        {% endif %}
                         <button type="button" class="btn qr-btn" style="background-color: #5B7553; color: white; border-radius: 0 8px 8px 0; padding: 0.5rem 0.75rem;" data-path="/static/uploads/{{ attachment.file_path.split('/')[-1].split('\\')[-1] }}" title="生成二维码">
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" style="display: block;">
                                     <rect x="1" y="1" width="5" height="5" rx="0.5" fill="currentColor"/>
@@ -292,6 +305,58 @@
             </div>
         </div>
         
+        {% if remote_prompt_matrix and remote_prompt_matrix.groups %}
+        {% if false %}
+        <!-- 旧版本地数据使用矩阵：暂时隐藏，保留代码用于对照或回退 -->
+        <!-- 数据使用矩阵 -->
+        <div class="card mb-4 border-0 shadow-sm" style="border-radius: 10px; overflow: hidden;">
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;">
+                <h5 class="mb-0" style="font-weight: 600;">数据使用矩阵</h5>
+                <div style="display:flex;align-items:center;gap:0.55rem;flex-wrap:wrap;">
+                    <span style="font-size:0.78rem;color:var(--om-muted);background:var(--om-cream-soft);border:1px solid var(--om-border);border-radius:999px;padding:0.25rem 0.65rem;">{{ remote_prompt_matrix.status }}</span>
+                    <form method="post" action="{{ url_for('sync_task_prompt_matrix', task_id=task.id) }}" style="margin:0;">
+                        <button type="submit" class="btn btn-sm btn-outline-primary" style="border-radius:999px;padding:0.25rem 0.75rem;font-size:0.78rem;white-space:nowrap;">
+                            <i class="bi bi-arrow-repeat"></i> 同步
+                        </button>
+                    </form>
+                </div>
+            </div>
+            <div class="card-body" style="padding: 2rem;">
+                <div class="om-matrix-head">
+                    <div>
+                        <h6 class="om-matrix-title">按使用场景复制提示词</h6>
+                        <p class="om-matrix-subtitle">按使用场景复制提示词；下方保留原本的本地矩阵，方便对比。</p>
+                    </div>
+                </div>
+
+                {% for item in remote_prompt_matrix['items'] %}
+                <textarea class="om-prompt-source" readonly hidden tabindex="-1" aria-hidden="true" id="{{ item.textarea_id }}">{{ item.prompt }}</textarea>
+                <div id="{{ item.note_id }}" hidden>{{ item.note }}</div>
+                {% endfor %}
+
+                <div class="om-prompt-matrix">
+                    {% for group in remote_prompt_matrix.groups %}
+                    <section>
+                        <div class="om-matrix-section-title">{{ group.name }}</div>
+                        <div class="om-scenario-grid">
+                            {% for item in group['items'] %}
+                            <div class="om-scenario-card">
+                                <h6 class="om-scenario-name">{{ item.title }}</h6>
+                                <div class="om-scenario-actions">
+                                    <button type="button" class="btn btn-outline-primary" aria-label="查看{{ item.title }}提示词" onclick="openPromptDetail('{{ item.js_key }}')">查看</button>
+                                    <button type="button" class="btn btn-primary" aria-label="复制{{ item.title }}提示词" onclick="copyToClipboard('{{ item.textarea_id }}', this)">复制</button>
+                                    <button type="button" class="btn btn-outline-primary om-prompt-video-btn" aria-label="查看{{ item.title }}演示" data-video-key="{{ item.js_key }}">演示</button>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </section>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         <!-- 数据使用矩阵 -->
         <div class="card mb-4 border-0 shadow-sm" style="border-radius: 10px; overflow: hidden;">
             <div class="card-header">
@@ -396,6 +461,7 @@
                 </div>
             </div>
         </div>
+        {% endif %}
         
         <!-- 提交数据列表 -->
         <div class="card border-0 shadow-sm" style="border-radius: 10px; overflow: hidden;">
@@ -578,6 +644,10 @@
         reveal:          {title: '本地附件查看功能', instructionId: 'reveal-instruction', noteId: 'reveal-extra-note'},
         apiDashboard:    {title: '基础数据大屏', instructionId: 'api-dashboard-instruction', noteId: 'api-dashboard-extra-note'},
     };
+    const REMOTE_PROMPT_VIDEO_LINKS = {{ (remote_prompt_matrix.videos if remote_prompt_matrix else {})|tojson }};
+    const REMOTE_PROMPT_SCENARIOS = {{ (remote_prompt_matrix.scenarios if remote_prompt_matrix else {})|tojson }};
+    Object.assign(PROMPT_VIDEO_LINKS, REMOTE_PROMPT_VIDEO_LINKS);
+    Object.assign(PROMPT_SCENARIOS, REMOTE_PROMPT_SCENARIOS);
     let currentPromptKey = null;
 
     function openPromptVideo(key) {

@@ -1,0 +1,370 @@
+{% extends 'base.html' %}
+
+{% block title %}编辑 HTML - {{ task.title }} - {{ get_app_name() }}{% endblock %}
+
+{% block styles %}
+{{ super() }}
+<style>
+    .om-editor-shell {
+        max-width: 1180px;
+        margin: 0 auto;
+    }
+    .om-editor-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.8rem;
+        margin-bottom: 1rem;
+    }
+    .om-editor-title {
+        margin: 0;
+        color: var(--om-ink);
+        font-weight: 800;
+        letter-spacing: 0;
+    }
+    .om-editor-meta {
+        margin-top: 0.35rem;
+        color: var(--om-muted);
+        font-size: 0.9rem;
+        word-break: break-all;
+    }
+    .om-api-panel {
+        border: 1px solid var(--om-border);
+        border-radius: 8px;
+        background: var(--om-paper);
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    .om-api-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0.6rem;
+        align-items: center;
+    }
+    .om-api-current {
+        font-family: var(--om-font-mono);
+        font-size: 0.86rem;
+        border: 1px solid var(--om-border);
+        border-radius: 8px;
+        background: var(--om-cream-soft);
+        color: var(--om-ink);
+        padding: 0.72rem 0.85rem;
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+    .om-api-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.55rem;
+        margin-top: 0.85rem;
+    }
+    .om-api-result {
+        margin-top: 0.85rem;
+        color: var(--om-muted);
+        font-size: 0.9rem;
+    }
+    .om-api-result ul {
+        margin: 0.45rem 0 0;
+        padding-left: 1.2rem;
+    }
+    .om-api-result code {
+        word-break: break-all;
+        white-space: normal;
+    }
+    .om-html-editor {
+        width: 100%;
+        min-height: 62vh;
+        resize: vertical;
+        border: 1px solid var(--om-border-strong);
+        border-radius: 8px;
+        background: var(--om-paper);
+        color: var(--om-ink);
+        padding: 1rem;
+        font-family: var(--om-font-mono);
+        font-size: 0.88rem;
+        line-height: 1.55;
+        tab-size: 2;
+    }
+    .om-editor-footer {
+        position: sticky;
+        bottom: 0;
+        display: flex;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        margin-top: 0.9rem;
+        padding: 0.9rem 0;
+        background: var(--om-cream);
+    }
+    @media (max-width: 768px) {
+        .om-api-row {
+            grid-template-columns: 1fr;
+        }
+        .om-editor-footer .btn,
+        .om-api-actions .btn {
+            width: 100%;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container my-4">
+    <div class="om-editor-shell">
+        <div class="om-editor-toolbar">
+            <div>
+                <h3 class="om-editor-title">HTML 在线编辑</h3>
+                <div class="om-editor-meta">{{ task.title }} · {{ attachment.file_name }}</div>
+            </div>
+            <a href="{{ url_for('task_detail', task_id=task.id) }}" class="btn btn-outline-primary">
+                <i class="bi bi-arrow-left"></i> 返回任务
+            </a>
+        </div>
+
+        <div class="om-api-panel">
+            <label class="form-label fw-semibold mb-2">当前任务 API</label>
+            <div class="om-api-row">
+                <div class="om-api-current" id="currentApiUrl">{{ current_api_url }}</div>
+                <button type="button" class="btn btn-outline-primary" id="copyApiBtn">
+                    <i class="bi bi-clipboard"></i> 复制
+                </button>
+            </div>
+            <div class="om-api-actions">
+                <button type="button" class="btn btn-outline-primary" id="detectApiBtn">
+                    <i class="bi bi-search"></i> 检测接口
+                </button>
+                <button type="button" class="btn btn-primary" id="replaceApiBtn" disabled>
+                    <i class="bi bi-arrow-repeat"></i> 一键替换为当前任务 API
+                </button>
+            </div>
+            <div class="om-api-result" id="apiDetectResult">用于修复上传页面中写死的旧数据接口。替换后请保存，再打开页面测试。</div>
+        </div>
+
+        <div class="om-api-panel">
+            <label class="form-label fw-semibold mb-2">AI 导师链接</label>
+            <div class="om-api-row">
+                <select class="form-select" id="assistantSelect" {% if not assistant_options %}disabled{% endif %}>
+                    {% if assistant_options %}
+                    <option value="">选择要替换成的 AI 导师</option>
+                    {% for item in assistant_options %}
+                    <option value="{{ item.id }}">{{ item.title }}{% if item.status != 'active' %}（{{ item.status }}）{% endif %}</option>
+                    {% endfor %}
+                    {% else %}
+                    <option value="">还没有可选择的 AI 导师</option>
+                    {% endif %}
+                </select>
+                <button type="button" class="btn btn-outline-primary" id="detectChatBtn">
+                    <i class="bi bi-search"></i> 检测导师链接
+                </button>
+            </div>
+            <div class="om-api-actions">
+                <button type="button" class="btn btn-primary" id="replaceChatBtn" disabled>
+                    <i class="bi bi-arrow-repeat"></i> 替换为所选导师链接
+                </button>
+            </div>
+            <div class="om-api-result" id="chatDetectResult">检测 HTML 中写死的旧 AI 导师学生链接，选择导师后再替换。</div>
+        </div>
+
+        <form method="POST" id="htmlEditForm">
+            <input type="hidden" name="encoding" value="{{ encoding }}">
+            <textarea class="om-html-editor" id="htmlContent" name="content" spellcheck="false">{{ content }}</textarea>
+            <div class="om-editor-footer">
+                <div class="d-flex flex-wrap gap-2">
+                    <a href="{{ preview_url }}" target="_blank" class="btn btn-outline-primary">
+                        <i class="bi bi-box-arrow-up-right"></i> 预览已保存页面
+                    </a>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <a href="{{ url_for('task_detail', task_id=task.id) }}" class="btn btn-secondary">取消</a>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-save"></i> 保存
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    const CURRENT_API_URL = {{ current_api_url|tojson }};
+    const ASSISTANT_OPTIONS = {{ assistant_options|tojson }};
+    const AUTO_DETECT = {{ auto_detect|tojson }};
+    const API_PATTERN = /(?:https?:\/\/[^'"`\s<>]+\/|\/|\b)api\/[A-Za-z0-9]{11}(?:\/all)?/g;
+    const CHAT_PATTERN = /(?:https?:\/\/[^'"`\s<>]+\/|\/|\b)chat\/[A-Za-z0-9]{11}/g;
+    const editor = document.getElementById('htmlContent');
+    const resultEl = document.getElementById('apiDetectResult');
+    const replaceBtn = document.getElementById('replaceApiBtn');
+    const assistantSelect = document.getElementById('assistantSelect');
+    const chatResultEl = document.getElementById('chatDetectResult');
+    const replaceChatBtn = document.getElementById('replaceChatBtn');
+    let detectedApiUrls = [];
+    let detectedChatUrls = [];
+
+    function currentApiInfo() {
+        return new URL(CURRENT_API_URL, window.location.origin);
+    }
+
+    function normalizeApiPath(value) {
+        try {
+            return new URL(value, window.location.origin).pathname.replace(/\/all$/, '');
+        } catch (e) {
+            return value.replace(/\/all$/, '');
+        }
+    }
+
+    function isCurrentApiReference(value) {
+        try {
+            const url = new URL(value, window.location.origin);
+            const current = currentApiInfo();
+            const samePath = url.pathname.replace(/\/all$/, '') === current.pathname;
+            const relative = value.startsWith('/');
+            return samePath && (relative || url.origin === current.origin);
+        } catch (e) {
+            return normalizeApiPath(value) === currentApiInfo().pathname;
+        }
+    }
+
+    function detectApiUrls() {
+        const matches = editor.value.match(API_PATTERN) || [];
+        const unique = Array.from(new Set(matches));
+        return unique.filter(url => !isCurrentApiReference(url));
+    }
+
+    function renderDetection(urls) {
+        detectedApiUrls = urls;
+        replaceBtn.disabled = urls.length === 0;
+
+        if (urls.length === 0) {
+            resultEl.innerHTML = '<span style="color: var(--om-success);"><i class="bi bi-check-circle"></i> 没有检测到需要替换的旧接口。</span>';
+            return;
+        }
+
+        resultEl.innerHTML =
+            '<div><strong>检测到 ' + urls.length + ' 个可能需要替换的旧接口：</strong></div>' +
+            '<ul>' + urls.map(url => '<li><code>' + escapeHtml(url) + '</code></li>').join('') + '</ul>' +
+            '<div class="mt-2">点击“一键替换”后，编辑框中的这些接口会替换为当前任务 API；确认无误后再保存。</div>';
+    }
+
+    function selectedAssistant() {
+        if (!assistantSelect || !assistantSelect.value) return null;
+        return ASSISTANT_OPTIONS.find(item => String(item.id) === String(assistantSelect.value)) || null;
+    }
+
+    function isSelectedChatReference(value) {
+        const assistant = selectedAssistant();
+        if (!assistant) return false;
+        try {
+            const url = new URL(value, window.location.origin);
+            const target = new URL(assistant.url, window.location.origin);
+            const relative = value.startsWith('/');
+            return url.pathname === target.pathname && (relative || url.origin === target.origin);
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function detectChatUrls() {
+        const matches = editor.value.match(CHAT_PATTERN) || [];
+        const unique = Array.from(new Set(matches));
+        return unique.filter(url => !isSelectedChatReference(url));
+    }
+
+    function updateChatReplaceState() {
+        replaceChatBtn.disabled = detectedChatUrls.length === 0 || !selectedAssistant();
+    }
+
+    function renderChatDetection(urls) {
+        detectedChatUrls = urls;
+        updateChatReplaceState();
+
+        if (!ASSISTANT_OPTIONS.length) {
+            chatResultEl.innerHTML = '<span style="color: var(--om-muted);">当前账号还没有 AI 导师，暂时无法替换导师链接。</span>';
+            return;
+        }
+
+        if (urls.length === 0) {
+            chatResultEl.innerHTML = '<span style="color: var(--om-success);"><i class="bi bi-check-circle"></i> 没有检测到需要替换的旧 AI 导师链接。</span>';
+            return;
+        }
+
+        const selected = selectedAssistant();
+        chatResultEl.innerHTML =
+            '<div><strong>检测到 ' + urls.length + ' 个可能需要替换的旧 AI 导师链接：</strong></div>' +
+            '<ul>' + urls.map(url => '<li><code>' + escapeHtml(url) + '</code></li>').join('') + '</ul>' +
+            '<div class="mt-2">' + (selected ? '将替换为：<code>' + escapeHtml(selected.url) + '</code>' : '请先从下拉框选择要替换成的 AI 导师。') + '</div>';
+    }
+
+    function escapeHtml(text) {
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    document.getElementById('detectApiBtn').addEventListener('click', function () {
+        renderDetection(detectApiUrls());
+    });
+
+    replaceBtn.addEventListener('click', function () {
+        if (!detectedApiUrls.length) {
+            renderDetection(detectApiUrls());
+        }
+        if (!detectedApiUrls.length) return;
+
+        let text = editor.value;
+        detectedApiUrls.forEach(function (url) {
+            text = text.split(url).join(CURRENT_API_URL);
+        });
+        editor.value = text;
+        renderDetection(detectApiUrls());
+        resultEl.innerHTML = '<span style="color: var(--om-success);"><i class="bi bi-check-circle"></i> 已替换为当前任务 API，请保存后测试。</span>';
+    });
+
+    document.getElementById('detectChatBtn').addEventListener('click', function () {
+        renderChatDetection(detectChatUrls());
+    });
+
+    assistantSelect.addEventListener('change', function () {
+        renderChatDetection(detectChatUrls());
+    });
+
+    replaceChatBtn.addEventListener('click', function () {
+        const assistant = selectedAssistant();
+        if (!assistant) {
+            renderChatDetection(detectChatUrls());
+            return;
+        }
+        if (!detectedChatUrls.length) {
+            renderChatDetection(detectChatUrls());
+        }
+        if (!detectedChatUrls.length) return;
+
+        let text = editor.value;
+        detectedChatUrls.forEach(function (url) {
+            text = text.split(url).join(assistant.url);
+        });
+        editor.value = text;
+        renderChatDetection(detectChatUrls());
+        chatResultEl.innerHTML = '<span style="color: var(--om-success);"><i class="bi bi-check-circle"></i> 已替换为所选 AI 导师链接，请保存后测试。</span>';
+    });
+
+    document.getElementById('copyApiBtn').addEventListener('click', async function () {
+        try {
+            await navigator.clipboard.writeText(CURRENT_API_URL);
+            const original = this.innerHTML;
+            this.innerHTML = '<i class="bi bi-check"></i> 已复制';
+            setTimeout(() => { this.innerHTML = original; }, 1400);
+        } catch (e) {
+            alert('复制失败，请手动复制');
+        }
+    });
+
+    if (AUTO_DETECT) {
+        renderDetection(detectApiUrls());
+        renderChatDetection(detectChatUrls());
+    }
+</script>
+{% endblock %}

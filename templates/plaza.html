@@ -205,6 +205,12 @@
         </div>
     </div>
 
+    {% if om_is_campus %}
+    <div class="plaza-tabs" role="tablist" aria-label="导师广场类型">
+        <button type="button" class="plaza-tab active" data-scope="public">公共广场</button>
+        <button type="button" class="plaza-tab" data-scope="campus">校内广场</button>
+    </div>
+    {% endif %}
 
     <div class="plaza-filters">
         <select id="filter-subject">
@@ -216,6 +222,9 @@
             {% for g in preset_grades %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
         </select>
         <input type="search" id="filter-q" placeholder="🔍 搜索标题 / 描述 / 用途 / 创建者" autocomplete="off">
+        <button type="button" id="plaza-refresh" class="btn btn-outline-primary" style="border-radius:999px;padding:0.45rem 0.9rem;font-size:0.86rem;white-space:nowrap;">
+            <i class="bi bi-arrow-repeat"></i> 同步
+        </button>
         <span class="plaza-stats" id="plaza-stats">加载中…</span>
     </div>
 
@@ -259,11 +268,15 @@
     const PLAZA_API_URL = {{ plaza_api_url | tojson }};
     const PRESET_SUBJECTS = {{ preset_subjects | tojson }};
     const PRESET_GRADES = {{ preset_grades | tojson }};
+    const IS_CAMPUS = {{ om_is_campus | tojson }};
+    const IS_CAMPUS_ADMIN = {{ om_is_campus_admin | tojson }};
+
     const grid = document.getElementById('plaza-grid');
     const stats = document.getElementById('plaza-stats');
     const filterSubject = document.getElementById('filter-subject');
     const filterGrade = document.getElementById('filter-grade');
     const filterQ = document.getElementById('filter-q');
+    const refreshBtn = document.getElementById('plaza-refresh');
 
     const modal = document.getElementById('plaza-modal');
     const pmTitle = document.getElementById('pm-title');
@@ -278,15 +291,19 @@
 
     let allItems = [];
     let publicItems = [];
+    let campusItems = [];
+    let currentScope = 'public';
     let currentItem = null;
 
     function escapeHtml(s) {
         return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     }
 
-    async function loadPlaza() {
+    async function loadPlaza(forceRefresh = false) {
+        currentScope = 'public';
+        if (forceRefresh && refreshBtn) refreshBtn.disabled = true;
         try {
-            const resp = await fetch(PLAZA_API_URL + '/all');
+            const resp = await fetch(PLAZA_API_URL + (forceRefresh ? '?refresh=1' : ''));
             if (!resp.ok) throw new Error('HTTP ' + resp.status);
             const data = await resp.json();
             publicItems = (data.submissions || []).filter(it => it && it.config && it.config.title).map(it => ({...it, _scope: 'public'}));
@@ -296,6 +313,26 @@
             render();
         } catch (e) {
             grid.innerHTML = '<div class="plaza-empty">😢 拉取广场数据失败：' + escapeHtml(e.message || e) + '</div>';
+            stats.textContent = '';
+        } finally {
+            if (refreshBtn) refreshBtn.disabled = false;
+        }
+    }
+
+    async function loadCampusPlaza() {
+        currentScope = 'campus';
+        grid.innerHTML = '<div class="plaza-loading">正在拉取校内广场数据…</div>';
+        stats.textContent = '加载中…';
+        try {
+            const resp = await fetch('/api/campus/plaza/templates');
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            const data = await resp.json();
+            campusItems = (data.submissions || []).filter(it => it && it.config && it.config.title).map(it => ({...it, _scope: 'campus'}));
+            campusItems.sort((a, b) => (b.shared_at || '').localeCompare(a.shared_at || ''));
+            allItems = campusItems;
+            render();
+        } catch (e) {
+            grid.innerHTML = '<div class="plaza-empty">😢 拉取校内广场数据失败：' + escapeHtml(e.message || e) + '</div>';
             stats.textContent = '';
         }
     }
@@ -334,6 +371,12 @@
             const author = it.nickname && it.nickname !== '匿名'
                 ? (it.school ? `${escapeHtml(it.nickname)} · ${escapeHtml(it.school)}` : escapeHtml(it.nickname))
                 : '<span style="opacity:0.7;">匿名分享</span>';
+            const statusBadge = it._scope === 'campus' && it.status === 'disabled'
+                ? '<span class="tag" style="background:#F2DCD9;color:#8B342E;">已禁用</span>'
+                : '';
+            const manageBtn = it._scope === 'campus' && IS_CAMPUS_ADMIN
+                ? `<button type="button" data-idx="${idx}" class="om-toggle">${it.status === 'active' ? '禁用' : '启用'}</button>`
+                : '';
             return `
                 <div class="plaza-card">
                     <h3 class="title">${escapeHtml(cfg.title)}</h3>
@@ -342,6 +385,7 @@
                         <span class="tag">${escapeHtml(it.subject || '')}</span>
                         <span class="tag grade">${escapeHtml(it.grade || '')}</span>
                         <span class="tag purpose">${escapeHtml(it.purpose || '')}</span>
+                        ${statusBadge}
                     </div>
                     <div class="meta">
                         <span class="author">${author}</span>
@@ -350,6 +394,7 @@
                     <div class="actions">
                         <button type="button" data-idx="${idx}" class="om-detail">查看完整</button>
                         <button type="button" data-idx="${idx}" class="primary om-clone"><i class="bi bi-cloud-download"></i> 克隆</button>
+                        ${manageBtn}
                     </div>
                 </div>
             `;
@@ -360,6 +405,9 @@
         });
         grid.querySelectorAll('.om-clone').forEach(btn => {
             btn.addEventListener('click', () => doClone(filtered[parseInt(btn.dataset.idx, 10)], btn));
+        });
+        grid.querySelectorAll('.om-toggle').forEach(btn => {
+            btn.addEventListener('click', () => toggleCampusTemplate(filtered[parseInt(btn.dataset.idx, 10)], btn));
         });
     }
 
@@ -379,6 +427,9 @@
         pmDesc.textContent = it.description || cfg.description || '（这位老师没填描述）';
         pmPrompt.textContent = cfg.system_prompt || '（缺失）';
         pmExtra.innerHTML = `
+            来源：${it._scope === 'campus' ? '校内广场' : '公共广场'}
+            ${it.status === 'disabled' ? ' · 状态：已禁用' : ''}
+            <br>
             推荐模型：${escapeHtml(cfg.selected_model_name || '—')}
             · 学生欢迎语：${cfg.welcome_message ? escapeHtml(cfg.welcome_message.slice(0, 40)) + (cfg.welcome_message.length > 40 ? '…' : '') : '（无）'}
             · 多模态：${cfg.allow_image_input ? '图' : ''}${cfg.allow_file_upload ? '文档' : ''}${cfg.allow_image_generation ? 'AI生图' : ''}
@@ -420,6 +471,27 @@
         }
     }
 
+    async function toggleCampusTemplate(it, btnEl) {
+        if (!it || !it.id) return;
+        const action = it.status === 'active' ? '禁用' : '启用';
+        if (!confirm('确定' + action + '这个校内广场模板吗？')) return;
+        btnEl.disabled = true;
+        try {
+            const resp = await fetch('/api/campus/plaza/templates/' + it.id + '/toggle', {method: 'POST'});
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok || !data.success) {
+                alert(data.message || (action + '失败 HTTP ' + resp.status));
+                btnEl.disabled = false;
+                return;
+            }
+            it.status = data.status;
+            render();
+        } catch (e) {
+            alert('请求失败：' + (e.message || e));
+            btnEl.disabled = false;
+        }
+    }
+
     pmClose.addEventListener('click', closeDetail);
     pmCancel.addEventListener('click', closeDetail);
     pmClone.addEventListener('click', () => doClone(currentItem, pmClone));
@@ -429,9 +501,31 @@
     filterSubject.addEventListener('change', render);
     filterGrade.addEventListener('change', render);
     filterQ.addEventListener('input', render);
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', () => {
+            if (currentScope === 'public') loadPlaza(true);
+            else loadCampusPlaza();
+        });
+    }
 
+    document.querySelectorAll('.plaza-tab').forEach(tab => {
+        tab.addEventListener('click', function() {
+            document.querySelectorAll('.plaza-tab').forEach(t => t.classList.remove('active'));
+            this.classList.add('active');
+            if (this.dataset.scope === 'campus') loadCampusPlaza();
+            else {
+                currentScope = 'public';
+                loadPlaza();
+            }
+        });
+    });
 
     loadPlaza();
+    setInterval(() => {
+        if (currentScope === 'public' && !modal.classList.contains('is-open')) {
+            loadPlaza(true);
+        }
+    }, 60000);
 })();
 </script>
 {% endblock %}

@@ -307,11 +307,13 @@
 {% block scripts %}
 <script>
 (function () {
-    // ===== 提交配置（拿到 QuickForm 任务地址 / 飞书反馈链接后改这里） =====
-    // QuickForm 任务的 API URL，POST JSON：{ [FIELD_NAME]: '北京' }
-    const QUICKFORM_SUBMIT_URL = 'https://quickform.cn/api/xrtzrtf5vq';
-    const QUICKFORM_STATS_URL  = QUICKFORM_SUBMIT_URL + '/all';  // GET 读取所有打卡数据
-    const FIELD_NAME = 'province';
+    // ===== 打卡数据源 =====
+    // 当前试验版：提交到 OpenMentor 后端，由后端写入同步表格；旧 QuickForm 数据源先保留，方便回退对比。
+    const CHECKIN_SUBMIT_URL = "{{ url_for('api_checkin_submit') }}";
+    const CHECKIN_STATS_URL  = "{{ url_for('api_checkin_stats') }}";
+    const LEGACY_QUICKFORM_SUBMIT_URL = 'https://quickform.cn/api/xrtzrtf5vq';
+    const LEGACY_QUICKFORM_STATS_URL  = LEGACY_QUICKFORM_SUBMIT_URL + '/all';
+    const LEGACY_FIELD_NAME = 'province';
     // 飞书反馈表单链接（留空则隐藏「提意见」按钮）
     const FEEDBACK_URL = 'https://scnxnljz0ey0.feishu.cn/share/base/form/shrcn0CLrjvFlCBuHaTKp4lzJGb';
     // ECharts 资源（懒加载，第一次打开浮窗才会拉）
@@ -385,7 +387,7 @@
             const [, geoData, statsResp] = await Promise.all([
                 loadEcharts(),
                 geoJson ? Promise.resolve(geoJson) : fetch(CHINA_GEOJSON_URL).then(r => r.json()),
-                fetch(QUICKFORM_STATS_URL),
+                fetch(CHECKIN_STATS_URL),
             ]);
             geoJson = geoData;
             if (!statsResp.ok) throw new Error('数据接口 HTTP ' + statsResp.status);
@@ -521,16 +523,17 @@
         submitBtn.disabled = true;
         submitBtn.textContent = '正在提交…';
         try {
-            if (!QUICKFORM_SUBMIT_URL) {
+            if (!CHECKIN_SUBMIT_URL) {
                 await new Promise(r => setTimeout(r, 350));
-                console.log('[占位] 待提交：', { [FIELD_NAME]: selected });
+                console.log('[占位] 待提交：', { province: selected });
             } else {
-                const resp = await fetch(QUICKFORM_SUBMIT_URL, {
+                const resp = await fetch(CHECKIN_SUBMIT_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ [FIELD_NAME]: selected }),
+                    body: JSON.stringify({ province: selected }),
                 });
-                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const result = await resp.json().catch(() => ({}));
+                if (!resp.ok || result.success === false) throw new Error(result.message || ('HTTP ' + resp.status));
             }
             showSuccess();
         } catch (err) {

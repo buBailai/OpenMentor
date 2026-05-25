@@ -45,6 +45,26 @@ if not os.path.exists(UPLOAD_FOLDER):
 
 # 允许的文件扩展名
 ALLOWED_EXTENSIONS = {'pdf', 'html', 'htm', 'jpg', 'zip'}
+HTML_EDITOR_EXTENSIONS = {'html', 'htm'}
+HTML_EDITOR_MAX_BYTES = 5 * 1024 * 1024
+PROMPT_MATRIX_CACHE_PATH = os.path.join('data', 'prompt_matrix_cache.json')
+PROMPT_MATRIX_CACHE_TTL_SECONDS = 60
+_PROMPT_MATRIX_MEMORY_CACHE = {'ts': 0, 'items': None, 'status': None}
+CHECKIN_CACHE_TTL_SECONDS = 60
+_CHECKIN_MEMORY_CACHE = {'ts': 0, 'submissions': None}
+PUBLIC_PLAZA_CACHE_TTL_SECONDS = 60
+_PUBLIC_PLAZA_MEMORY_CACHE = {'ts': 0, 'submissions': None}
+CHECKIN_ALLOWED_PROVINCES = {
+    '北京', '天津', '河北', '山西', '内蒙古',
+    '辽宁', '吉林', '黑龙江',
+    '上海', '江苏', '浙江', '安徽', '福建', '江西', '山东',
+    '河南', '湖北', '湖南',
+    '广东', '广西', '海南',
+    '重庆', '四川', '贵州', '云南', '西藏',
+    '陕西', '甘肃', '青海', '宁夏', '新疆',
+    '香港', '澳门', '台湾',
+    '海外',
+}
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev_secret_key')
@@ -54,6 +74,14 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB 全局上限（OpenM
 app.config['JSON_AS_ASCII'] = False  # 确保JSON响应中的中文正确显示，不转义为Unicode
 
 APP_NAME = 'OpenMentor'
+APP_EDITION = (os.getenv('OPENMENTOR_EDITION') or 'community').strip().lower()
+if APP_EDITION not in {'community', 'campus'}:
+    logger.warning(f"未知 OPENMENTOR_EDITION={APP_EDITION!r}，已回退为 community")
+    APP_EDITION = 'community'
+
+
+def is_campus_edition():
+    return APP_EDITION == 'campus'
 
 
 def _sqlite_db_path_from_url(database_url):
@@ -155,6 +183,447 @@ def save_uploaded_file(file):
     except Exception as e:
         logger.error(f"保存文件失败: {str(e)}")
     return None, None
+
+def _file_extension(filename):
+    return filename.rsplit('.', 1)[1].lower() if filename and '.' in filename else ''
+
+def _is_html_attachment(attachment):
+    ext = _file_extension(attachment.file_name) or _file_extension(attachment.file_path)
+    return ext in HTML_EDITOR_EXTENSIONS
+
+def _resolve_upload_file_path(stored_path):
+    """把附件路径限制在 static/uploads 下，避免在线编辑器读写任意文件。"""
+    if not stored_path:
+        return None
+
+    upload_root = os.path.realpath(os.path.abspath(os.path.join(app.root_path, app.config['UPLOAD_FOLDER'])))
+    if os.path.isabs(stored_path):
+        candidate = os.path.realpath(stored_path)
+    else:
+        normalized = stored_path.replace('\\', '/').lstrip('/')
+        if normalized.startswith('uploads/'):
+            normalized = 'static/' + normalized
+        candidate = os.path.realpath(os.path.abspath(os.path.join(app.root_path, normalized)))
+
+    if candidate == upload_root or candidate.startswith(upload_root + os.sep):
+        return candidate
+    return None
+
+def _read_editable_html_file(file_path):
+    with open(file_path, 'rb') as f:
+        raw = f.read(HTML_EDITOR_MAX_BYTES + 1)
+    if len(raw) > HTML_EDITOR_MAX_BYTES:
+        raise ValueError('HTML 文件超过在线编辑大小限制（5MB）')
+
+    for encoding in ('utf-8-sig', 'utf-8', 'gb18030'):
+        try:
+            return raw.decode(encoding), encoding
+        except UnicodeDecodeError:
+            continue
+    return raw.decode('utf-8', errors='replace'), 'utf-8'
+
+def _builtin_prompt_matrix_records():
+    return [
+        {
+            'enabled': True, 'sort': 10, 'category': '数据采集', 'key': 'simple',
+            'title': '基础提交页面',
+            'prompt': "创建完应用后，以POST方式向 '{{api_url}}' 发送数据",
+            'note': '用于生成最基础的数据采集页面，只需要把页面里的表单数据提交到当前任务的 API 地址。',
+            'bv': 'BV1WgGq65EHa', 'video_title': '基础提交页面制作视频演示', 'edition': '全部',
+        },
+        {
+            'enabled': True, 'sort': 20, 'category': '数据采集', 'key': 'attachment',
+            'title': '附件采集功能',
+            'prompt': '创建带附件上传的 HTML 表单 → form 设 method="POST" 和 enctype="multipart/form-data"，附件用 <input type="file" name="字段名">；用 fetch + new FormData(form) 提交到 "{{api_url}}"，不要手动设 Content-Type',
+            'note': '用于生成支持附件上传的采集页面。重点是使用 multipart/form-data、FormData，并且不要手动设置 Content-Type。',
+            'bv': 'BV1ZrGi6PEiu', 'video_title': '附件采集功能制作视频演示', 'edition': '全部',
+        },
+        {
+            'enabled': True, 'sort': 30, 'category': '数据采集', 'key': 'assistantWidget',
+            'title': 'AI 导师悬浮球功能',
+            'prompt': '请在这个 HTML 页面右下角增加一个「AI 导师」悬浮球：右下角固定显示圆形按钮，点击后弹出小窗；小窗顶部显示「AI 导师」和关闭按钮，主体用 iframe 嵌入 AI 导师学生访问链接（把链接替换成 "{{chat_url_example}}"）；桌面端小窗约 380px × 560px，手机端接近全屏宽度、高度约 75vh；不要破坏原页面表单、按钮、样式和 JavaScript；所有 CSS 和 JavaScript 写在当前 HTML 文件里；请输出完整 HTML 代码',
+            'note': '用于在采集页面右下角加入 AI 导师悬浮球，把数据采集和 AI 导师答疑放到同一个学生页面里。',
+            'bv': 'BV1N4Gi6yEgx', 'video_title': 'AI 导师悬浮球制作视频演示', 'edition': '全部',
+        },
+        {
+            'enabled': True, 'sort': 40, 'category': '数据分析', 'key': 'apiDashboard',
+            'title': '基础数据大屏',
+            'prompt': '请通过数据接口（API 链接）读取数据，制作一个数据大屏 HTML 页面。\n\n数据接口地址：{{api_url}}\n\n请根据我提供的采集页面 HTML 文件了解各字段含义、字段名称和展示方式；页面打开后用 fetch(GET) 请求上面的 API 地址，读取返回数据并渲染统计卡片、图表和明细表。请处理空数据、字段缺失、接口请求失败，以及附件字段（如 _attachments）可能存在的情况。\n\n完整数据格式参考如下，请严格按照这个 JSON 结构读取字段：\n「完整数据格式替换」\n\n请输出一个可直接保存运行的完整 HTML 文件，CSS 和 JavaScript 写在同一个 HTML 文件里，不需要改动后端。',
+            'note': '建议先提交 1-2 条测试数据，再打开数据接口链接，把页面里的完整数据内容复制出来，替换提示词里的「完整数据格式替换」。',
+            'bv': 'BV1wYGi66EF5', 'video_title': '基础数据大屏制作视频演示', 'edition': '全部',
+        },
+        {
+            'enabled': True, 'sort': 50, 'category': '数据分析', 'key': 'reveal',
+            'title': '本地附件查看功能',
+            'prompt': '想给附件加「📁 打开服务器文件夹」按钮（自部署场景免下载直接看）→ 发 POST 到 "{{attachment_reveal_url}}"，body 用 FormData 设 path=附件 url 去掉开头的 /（例：static/uploads/quickform/.../xxx.png）；会在跑 OpenMentor 那台电脑上弹出 Finder / 资源管理器并高亮该文件',
+            'note': '用于自部署场景的数据大屏，让老师在运行 OpenMentor 的电脑上直接打开附件所在目录。',
+            'bv': 'BV1zzGi6vEgQ', 'video_title': '本地附件查看功能制作视频演示', 'edition': '全部',
+        },
+    ]
+
+def _prompt_matrix_cell_text(value):
+    if value is None:
+        return ''
+    if isinstance(value, bool):
+        return '是' if value else ''
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            if isinstance(item, dict):
+                parts.append(str(item.get('text') or item.get('name') or item.get('value') or '').strip())
+            else:
+                parts.append(str(item).strip())
+        return '，'.join([p for p in parts if p])
+    if isinstance(value, dict):
+        return str(value.get('text') or value.get('name') or value.get('value') or '').strip()
+    return str(value).strip()
+
+def _prompt_matrix_enabled(value):
+    if isinstance(value, bool):
+        return value
+    text = _prompt_matrix_cell_text(value).lower()
+    return text in {'1', 'true', 'yes', 'y', '是', '启用', '已启用', '勾选'}
+
+def _normalize_prompt_matrix_record(fields):
+    def pick(*names):
+        for name in names:
+            if name in fields:
+                return fields.get(name)
+        return None
+
+    try:
+        sort_value = int(float(_prompt_matrix_cell_text(pick('序号', '排序')) or '999'))
+    except ValueError:
+        sort_value = 999
+
+    enabled_value = pick('启用', '是否启用')
+
+    return {
+        'enabled': True if enabled_value is None else _prompt_matrix_enabled(enabled_value),
+        'sort': sort_value,
+        'category': _prompt_matrix_cell_text(pick('分类')),
+        'key': _prompt_matrix_cell_text(pick('场景Key', '场景 key', '场景KEY', 'key')),
+        'title': _prompt_matrix_cell_text(pick('场景名称', '名称', '标题')),
+        'prompt': _prompt_matrix_cell_text(pick('提示词内容', '提示词')),
+        'note': _prompt_matrix_cell_text(pick('说明文字', '说明')),
+        'bv': _prompt_matrix_cell_text(pick('B站BV号', 'BV号', 'B站 BV 号')),
+        'video_title': _prompt_matrix_cell_text(pick('视频标题')),
+        'edition': _prompt_matrix_cell_text(pick('适用版本')) or '全部',
+    }
+
+def _lark_prompt_matrix_configured():
+    return all((os.getenv(k) or '').strip() for k in ('LARK_APP_ID', 'LARK_APP_SECRET', 'LARK_BASE_TOKEN', 'LARK_TABLE_ID'))
+
+def _get_lark_tenant_access_token():
+    app_id = (os.getenv('LARK_APP_ID') or '').strip()
+    app_secret = (os.getenv('LARK_APP_SECRET') or '').strip()
+    if not app_id or not app_secret:
+        raise RuntimeError('同步应用凭证未配置')
+    token_resp = requests.post(
+        'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal',
+        json={'app_id': app_id, 'app_secret': app_secret},
+        timeout=10,
+    )
+    token_resp.raise_for_status()
+    token_data = token_resp.json()
+    tenant_token = token_data.get('tenant_access_token')
+    if not tenant_token:
+        raise RuntimeError(token_data.get('msg') or '无法获取同步访问令牌')
+    return tenant_token
+
+def _fetch_lark_prompt_matrix_records():
+    base_token = (os.getenv('LARK_BASE_TOKEN') or '').strip()
+    table_id = (os.getenv('LARK_TABLE_ID') or '').strip()
+    view_id = (os.getenv('LARK_VIEW_ID') or '').strip()
+
+    tenant_token = _get_lark_tenant_access_token()
+    params = {'page_size': 100}
+    if view_id:
+        params['view_id'] = view_id
+    headers = {'Authorization': f'Bearer {tenant_token}'}
+    url = f'https://open.feishu.cn/open-apis/bitable/v1/apps/{base_token}/tables/{table_id}/records'
+    records = []
+    page_token = ''
+    while True:
+        if page_token:
+            params['page_token'] = page_token
+        resp = requests.get(url, headers=headers, params=params, timeout=10)
+        resp.raise_for_status()
+        payload = resp.json()
+        if payload.get('code') not in (0, None):
+            raise RuntimeError(payload.get('msg') or '读取数据使用矩阵失败')
+        data = payload.get('data') or {}
+        for item in data.get('items') or []:
+            records.append(_normalize_prompt_matrix_record(item.get('fields') or {}))
+        if not data.get('has_more'):
+            break
+        page_token = data.get('page_token') or ''
+        if not page_token:
+            break
+    return records
+
+def _read_prompt_matrix_cache():
+    if not os.path.exists(PROMPT_MATRIX_CACHE_PATH):
+        return None
+    try:
+        with open(PROMPT_MATRIX_CACHE_PATH, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return data.get('items') if isinstance(data, dict) else None
+    except Exception as e:
+        logger.warning(f'[提示词矩阵] 读取缓存失败: {e}')
+        return None
+
+def _write_prompt_matrix_cache(items):
+    try:
+        os.makedirs(os.path.dirname(PROMPT_MATRIX_CACHE_PATH), exist_ok=True)
+        with open(PROMPT_MATRIX_CACHE_PATH, 'w', encoding='utf-8') as f:
+            json.dump({'updated_at': datetime.now().isoformat(), 'items': items}, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.warning(f'[提示词矩阵] 写入缓存失败: {e}')
+
+def _load_prompt_matrix_records():
+    now = time.time()
+    if _PROMPT_MATRIX_MEMORY_CACHE['items'] and now - _PROMPT_MATRIX_MEMORY_CACHE['ts'] < PROMPT_MATRIX_CACHE_TTL_SECONDS:
+        return _PROMPT_MATRIX_MEMORY_CACHE['items'], _PROMPT_MATRIX_MEMORY_CACHE['status']
+
+    status = '内置预览数据'
+    items = None
+    if _lark_prompt_matrix_configured():
+        try:
+            items = _fetch_lark_prompt_matrix_records()
+            status = f'已同步 · {datetime.now().strftime("%H:%M")}'
+            _write_prompt_matrix_cache(items)
+        except Exception as e:
+            logger.warning(f'[提示词矩阵] 同步失败: {e}')
+            cached = _read_prompt_matrix_cache()
+            if cached:
+                items = cached
+                status = f'同步失败，已使用本地缓存：{e}'
+            else:
+                status = f'同步失败，已使用内置预览：{e}'
+
+    if items is None:
+        cached = _read_prompt_matrix_cache()
+        if cached:
+            items = cached
+            status = '本地缓存数据'
+        else:
+            items = _builtin_prompt_matrix_records()
+            if not _lark_prompt_matrix_configured():
+                status = '内置预览数据（同步配置未完成）'
+
+    _PROMPT_MATRIX_MEMORY_CACHE.update({'ts': now, 'items': items, 'status': status})
+    return items, status
+
+def _sync_prompt_matrix_from_lark():
+    if not _lark_prompt_matrix_configured():
+        raise RuntimeError('同步配置未完成')
+    items = _fetch_lark_prompt_matrix_records()
+    _write_prompt_matrix_cache(items)
+    _PROMPT_MATRIX_MEMORY_CACHE.update({
+        'ts': time.time(),
+        'items': items,
+        'status': f'手动同步 · {datetime.now().strftime("%H:%M")}',
+    })
+    return items
+
+def _lark_checkin_configured():
+    return all((os.getenv(k) or '').strip() for k in ('LARK_APP_ID', 'LARK_APP_SECRET', 'LARK_CHECKIN_BASE_TOKEN', 'LARK_CHECKIN_TABLE_ID'))
+
+OM_LEGACY_CHECKIN_API_URL = 'https://quickform.cn/api/xrtzrtf5vq'
+
+def _checkin_config():
+    return {
+        'base_token': (os.getenv('LARK_CHECKIN_BASE_TOKEN') or '').strip(),
+        'table_id': (os.getenv('LARK_CHECKIN_TABLE_ID') or '').strip(),
+        'view_id': (os.getenv('LARK_CHECKIN_VIEW_ID') or '').strip(),
+        'field': (os.getenv('LARK_CHECKIN_FIELD') or '省份').strip() or '省份',
+    }
+
+def _checkin_records_url():
+    cfg = _checkin_config()
+    return f'https://open.feishu.cn/open-apis/bitable/v1/apps/{cfg["base_token"]}/tables/{cfg["table_id"]}/records'
+
+def _normalize_checkin_province(value):
+    province = _prompt_matrix_cell_text(value)
+    return province if province in CHECKIN_ALLOWED_PROVINCES else ''
+
+def _extract_checkin_province(record):
+    if not isinstance(record, dict):
+        return ''
+    for key in ('province', '省份'):
+        province = _normalize_checkin_province(record.get(key))
+        if province:
+            return province
+    for key in ('data', 'fields', 'payload', 'form_data'):
+        nested = record.get(key)
+        if isinstance(nested, dict):
+            province = _extract_checkin_province(nested)
+            if province:
+                return province
+    return ''
+
+def _create_legacy_checkin_record(province):
+    resp = requests.post(OM_LEGACY_CHECKIN_API_URL, json={'province': province}, timeout=10)
+    if not resp.ok:
+        raise RuntimeError(resp.text[:200] or f'HTTP {resp.status_code}')
+    _CHECKIN_MEMORY_CACHE.update({'ts': 0, 'submissions': None})
+    return True
+
+def _create_lark_checkin_record(province):
+    if not _lark_checkin_configured():
+        raise RuntimeError('打卡同步配置未完成')
+    cfg = _checkin_config()
+    headers = {
+        'Authorization': f'Bearer {_get_lark_tenant_access_token()}',
+        'Content-Type': 'application/json',
+    }
+    resp = requests.post(
+        _checkin_records_url(),
+        headers=headers,
+        json={'fields': {cfg['field']: province}},
+        timeout=10,
+    )
+    try:
+        payload = resp.json()
+    except (ValueError, json.JSONDecodeError):
+        payload = {}
+    if not resp.ok:
+        raise RuntimeError(payload.get('msg') or payload.get('message') or resp.text[:200] or f'HTTP {resp.status_code}')
+    if payload.get('code') not in (0, None):
+        raise RuntimeError(payload.get('msg') or '写入打卡数据失败')
+    _CHECKIN_MEMORY_CACHE.update({'ts': 0, 'submissions': None})
+    return payload.get('data') or {}
+
+def _create_checkin_record(province):
+    if _lark_checkin_configured():
+        return _create_lark_checkin_record(province)
+    return _create_legacy_checkin_record(province)
+
+def _fetch_legacy_checkin_submissions():
+    resp = requests.get(f'{OM_LEGACY_CHECKIN_API_URL}/all', timeout=10)
+    try:
+        payload = resp.json()
+    except (ValueError, json.JSONDecodeError):
+        payload = {}
+    if not resp.ok:
+        raise RuntimeError(payload.get('message') or resp.text[:200] or f'HTTP {resp.status_code}')
+    records = payload.get('submissions') or payload.get('data') or payload.get('items') or []
+    submissions = []
+    for record in records:
+        province = _extract_checkin_province(record)
+        if province:
+            submissions.append({'province': province})
+    return submissions
+
+def _fetch_lark_checkin_submissions():
+    if not _lark_checkin_configured():
+        raise RuntimeError('打卡同步配置未完成')
+    cfg = _checkin_config()
+    headers = {'Authorization': f'Bearer {_get_lark_tenant_access_token()}'}
+    params = {'page_size': 100}
+    if cfg['view_id']:
+        params['view_id'] = cfg['view_id']
+    submissions = []
+    page_token = ''
+    while True:
+        if page_token:
+            params['page_token'] = page_token
+        resp = requests.get(_checkin_records_url(), headers=headers, params=params, timeout=10)
+        try:
+            payload = resp.json()
+        except (ValueError, json.JSONDecodeError):
+            payload = {}
+        if not resp.ok:
+            raise RuntimeError(payload.get('msg') or payload.get('message') or resp.text[:200] or f'HTTP {resp.status_code}')
+        if payload.get('code') not in (0, None):
+            raise RuntimeError(payload.get('msg') or '读取打卡数据失败')
+        data = payload.get('data') or {}
+        for item in data.get('items') or []:
+            fields = item.get('fields') or {}
+            province = _normalize_checkin_province(fields.get(cfg['field']))
+            if province:
+                submissions.append({'province': province})
+        if not data.get('has_more'):
+            break
+        page_token = data.get('page_token') or ''
+        if not page_token:
+            break
+    return submissions
+
+def _load_checkin_submissions():
+    now = time.time()
+    if _CHECKIN_MEMORY_CACHE['submissions'] is not None and now - _CHECKIN_MEMORY_CACHE['ts'] < CHECKIN_CACHE_TTL_SECONDS:
+        return _CHECKIN_MEMORY_CACHE['submissions']
+    submissions = _fetch_lark_checkin_submissions() if _lark_checkin_configured() else _fetch_legacy_checkin_submissions()
+    _CHECKIN_MEMORY_CACHE.update({'ts': now, 'submissions': submissions})
+    return submissions
+
+def _render_prompt_matrix_placeholders(text, task):
+    host_url = request.host_url
+    host_root = request.host_url.rstrip('/')
+    replacements = {
+        '{{api_url}}': f'{host_root}/api/{task.task_id}',
+        '{{host_url}}': host_url,
+        '{{chat_url_example}}': f'{host_root}/chat/某个AI导师ID',
+        '{{attachment_reveal_url}}': f'{host_root}{url_for("attachment_reveal")}',
+    }
+    for key, value in replacements.items():
+        text = (text or '').replace(key, value)
+    return text
+
+def _prepare_prompt_matrix_for_task(task):
+    raw_items, status = _load_prompt_matrix_records()
+    edition_aliases = {
+        'community': {'全部', '个人版', '开源版', 'community'},
+        'campus': {'全部', '校园版', 'campus'},
+    }.get(APP_EDITION, {'全部'})
+    items = []
+    used_keys = set()
+    for idx, raw in enumerate(raw_items, 1):
+        edition = (raw.get('edition') or '全部').strip()
+        edition_parts = {part.strip() for part in re.split(r'[,，/、\s]+', edition) if part.strip()}
+        if not raw.get('enabled') or (edition_parts and not edition_parts.intersection(edition_aliases)):
+            continue
+        key = re.sub(r'[^A-Za-z0-9_]+', '_', raw.get('key') or f'item_{idx}').strip('_') or f'item_{idx}'
+        js_key = f'remote_{key}'
+        while js_key in used_keys:
+            js_key = f'{js_key}_{idx}'
+        used_keys.add(js_key)
+        item = {
+            'js_key': js_key,
+            'textarea_id': f'{js_key}_instruction',
+            'note_id': f'{js_key}_note',
+            'category': raw.get('category') or '其他',
+            'title': raw.get('title') or raw.get('key') or '未命名场景',
+            'prompt': _render_prompt_matrix_placeholders(raw.get('prompt') or '', task),
+            'note': _render_prompt_matrix_placeholders(raw.get('note') or '', task),
+            'bv': raw.get('bv') or '',
+            'video_title': raw.get('video_title') or f'{raw.get("title") or "提示词"}视频演示',
+            'sort': raw.get('sort', 999),
+        }
+        items.append(item)
+
+    def sort_matrix_items(matrix_items):
+        return sorted(matrix_items, key=lambda x: (x.get('sort', 999), x.get('title', '')))
+
+    grouped = []
+    for category in ['数据采集', '数据分析']:
+        cat_items = sort_matrix_items([x for x in items if x['category'] == category])
+        if cat_items:
+            grouped.append({'name': category, 'items': cat_items})
+    other_items = sort_matrix_items([x for x in items if x['category'] not in {'数据采集', '数据分析'}])
+    if other_items:
+        grouped.append({'name': '其他', 'items': other_items})
+
+    page_items = [item for group in grouped for item in group['items']]
+    scenarios = {x['js_key']: {'title': x['title'], 'instructionId': x['textarea_id'], 'noteId': x['note_id']} for x in page_items}
+    videos = {x['js_key']: {'bv': x['bv'], 'title': x['video_title']} for x in page_items}
+    return {'groups': grouped, 'items': page_items, 'scenarios': scenarios, 'videos': videos, 'status': status}
 
 def generate_custom_id():
     """
@@ -344,6 +813,25 @@ class ClassOption(Base):
     __table_args__ = (
         UniqueConstraint('user_id', 'grade', 'class_name', name='uq_class_option_user_grade_class'),
     )
+
+
+class CampusPlazaTemplate(Base):
+    """校园版：校内 AI 导师广场模板。只保存配置，不保存 API Key 或学生数据。"""
+    __tablename__ = 'campus_plaza_template'
+    id = Column(Integer, primary_key=True)
+    source_assistant_id = Column(Integer, ForeignKey('task.id'))
+    owner_user_id = Column(Integer, ForeignKey('user.id'), nullable=False, index=True)
+    title = Column(String(200), nullable=False)
+    subject = Column(String(30), nullable=False)
+    grade = Column(String(20), nullable=False)
+    purpose = Column(String(60), nullable=False)
+    description = Column(Text)
+    nickname = Column(String(30))
+    school = Column(String(60))
+    config_json = Column(Text, nullable=False)
+    status = Column(String(20), default='active', nullable=False)
+    created_at = Column(DateTime, default=datetime.now, index=True)
+    updated_at = Column(DateTime, default=datetime.now)
 
 
 class Message(Base):
@@ -692,7 +1180,29 @@ def _safe_next_url(target, default_endpoint='dashboard'):
     return target if _is_safe_next_url(target) else url_for(default_endpoint)
 
 
-@login_manager.user_loader
+def campus_admin_required(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if not is_campus_edition():
+            abort(404)
+        if not current_user.is_authenticated:
+            return login_manager.unauthorized()
+        if not is_admin_user(current_user):
+            flash('需要校园版管理员权限', 'danger')
+            return redirect(url_for('dashboard'))
+        return func(*args, **kwargs)
+    return wrapper
+
+
+@app.context_processor
+def _inject_edition_flags():
+    return {
+        'om_edition': APP_EDITION,
+        'om_is_campus': is_campus_edition(),
+        'om_is_campus_admin': is_campus_edition() and is_admin_user(current_user),
+    }
+
+
 @login_manager.user_loader
 def load_user(user_id):
     db = SessionLocal()
@@ -1318,6 +1828,28 @@ def logout():
 def index():
     return render_template('home.html')
 
+@app.route('/api/checkin', methods=['POST'])
+def api_checkin_submit():
+    body = request.get_json(silent=True) or {}
+    province = (body.get('province') or '').strip()
+    if province not in CHECKIN_ALLOWED_PROVINCES:
+        return jsonify({'success': False, 'message': '无效的地区'}), 400
+    try:
+        _create_checkin_record(province)
+        return jsonify({'success': True, 'province': province})
+    except Exception as e:
+        logger.warning(f'[首页打卡] 提交失败: {e}')
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/checkin/stats')
+def api_checkin_stats():
+    try:
+        submissions = _load_checkin_submissions()
+        return jsonify({'success': True, 'submissions': submissions})
+    except Exception as e:
+        logger.warning(f'[首页打卡] 读取统计失败: {e}')
+        return jsonify({'success': False, 'message': str(e), 'submissions': []}), 500
+
 
 # ==================== PWA：根路径暴露 manifest 和 service worker（B6）====================
 @app.route('/manifest.json')
@@ -1828,6 +2360,86 @@ def upload_task_attachment(task_id):
     finally:
         db.close()
 
+@app.route('/task/<int:task_id>/attachment/<int:attachment_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_task_html_attachment(task_id, attachment_id):
+    db = SessionLocal()
+    try:
+        task = db.query(Task).get(task_id)
+        if not task:
+            flash('任务不存在', 'danger')
+            return redirect(url_for('dashboard'))
+        if task.user_id != current_user.id:
+            flash('无权编辑此任务', 'danger')
+            return redirect(url_for('dashboard'))
+
+        attachment = db.query(Attachment).get(attachment_id)
+        if not attachment or attachment.task_id != task.id:
+            flash('附件不存在或不属于当前任务', 'danger')
+            return redirect(url_for('task_detail', task_id=task.id))
+        if not _is_html_attachment(attachment):
+            flash('只能在线编辑 HTML / HTM 文件', 'warning')
+            return redirect(url_for('task_detail', task_id=task.id))
+
+        file_path = _resolve_upload_file_path(attachment.file_path)
+        if not file_path or not os.path.isfile(file_path):
+            flash('附件文件不存在或路径异常', 'danger')
+            return redirect(url_for('task_detail', task_id=task.id))
+
+        current_api_url = request.host_url.rstrip('/') + url_for('submit_form', task_id=task.task_id)
+        preview_url = url_for('static', filename='uploads/' + os.path.basename(file_path))
+        content = None
+        encoding = request.form.get('encoding') or 'utf-8'
+
+        if request.method == 'POST':
+            content = request.form.get('content', '')
+            if len(content.encode('utf-8')) > HTML_EDITOR_MAX_BYTES:
+                flash('HTML 文件超过在线编辑大小限制（5MB）', 'danger')
+            else:
+                if encoding not in {'utf-8', 'utf-8-sig', 'gb18030'}:
+                    encoding = 'utf-8'
+                with open(file_path, 'w', encoding=encoding, newline='') as f:
+                    f.write(content)
+                flash('HTML 文件已保存', 'success')
+                return redirect(url_for('edit_task_html_attachment', task_id=task.id, attachment_id=attachment.id))
+
+        if content is None:
+            try:
+                content, encoding = _read_editable_html_file(file_path)
+            except ValueError as e:
+                flash(str(e), 'danger')
+                return redirect(url_for('task_detail', task_id=task.id))
+
+        assistant_options = []
+        assistants = (
+            db.query(Task)
+            .filter_by(user_id=current_user.id, is_assistant=True)
+            .order_by(Task.created_at.desc())
+            .all()
+        )
+        for assistant in assistants:
+            assistant_options.append({
+                'id': assistant.id,
+                'title': assistant.title,
+                'task_id': assistant.task_id,
+                'status': assistant.status or 'active',
+                'url': request.host_url.rstrip('/') + url_for('chat_entry', task_id=assistant.task_id),
+            })
+
+        return render_template(
+            'html_attachment_editor.html',
+            task=task,
+            attachment=attachment,
+            content=content,
+            encoding=encoding,
+            current_api_url=current_api_url,
+            assistant_options=assistant_options,
+            preview_url=preview_url,
+            auto_detect=request.args.get('action') == 'repair',
+        )
+    finally:
+        db.close()
+
 @app.route('/task/<int:task_id>')
 @login_required
 def task_detail(task_id):
@@ -1861,7 +2473,36 @@ def task_detail(task_id):
             sub.attachments = attachments
             items.append(sub)
 
-        return render_template('task_detail.html', task=task, submission=items)
+        remote_prompt_matrix = _prepare_prompt_matrix_for_task(task)
+        return render_template(
+            'task_detail.html',
+            task=task,
+            submission=items,
+            remote_prompt_matrix=remote_prompt_matrix,
+        )
+    finally:
+        db.close()
+
+@app.route('/task/<int:task_id>/prompt_matrix/sync', methods=['POST'])
+@login_required
+def sync_task_prompt_matrix(task_id):
+    db = SessionLocal()
+    try:
+        task = db.query(Task).get(task_id)
+        if not task:
+            flash('任务不存在', 'danger')
+            return redirect(url_for('dashboard'))
+        if task.user_id != current_user.id:
+            flash('无权访问此任务', 'danger')
+            return redirect(url_for('dashboard'))
+
+        try:
+            items = _sync_prompt_matrix_from_lark()
+            flash(f'数据使用矩阵已同步，共 {len(items)} 条。', 'success')
+        except Exception as e:
+            logger.warning(f'[提示词矩阵] 手动同步失败: {e}')
+            flash(f'数据使用矩阵同步失败：{e}', 'danger')
+        return redirect(url_for('task_detail', task_id=task.id))
     finally:
         db.close()
 
@@ -2461,6 +3102,8 @@ def get_qf_task_list():
 @app.route('/api/system/init', methods=['POST'])
 @login_required
 def system_init():
+    if is_campus_edition():
+        return jsonify({'success': False, 'message': '校园版不支持从个人设置页执行系统初始化'}), 403
     import os
     db = SessionLocal()
     try:
@@ -2655,7 +3298,632 @@ def profile():
         db.close()
 
 
-@app.route('/analyze/<int:task_id>/smart_analyze', methods=['GET'])
+def _generate_temp_password(length=10):
+    alphabet = string.ascii_letters + string.digits
+    return ''.join(random.choices(alphabet, k=length))
+
+
+def _legacy_teacher_email(username):
+    """兼容旧 user.email 非空唯一约束；校园版界面不再使用邮箱登录或展示。"""
+    safe = ''.join(ch if ch.isalnum() or ch in ('-', '_', '.') else '_' for ch in username)
+    return f'{safe or "teacher"}@openmentor.local'
+
+
+def _parse_teacher_import_file(file_storage):
+    """解析教师账号导入文件，表头支持：手机号/账号/用户名 + 姓名/显示名。"""
+    filename = (file_storage.filename or '').lower()
+    if not filename:
+        return None, '请选择要上传的 Excel 文件'
+
+    try:
+        if filename.endswith('.xlsx'):
+            from openpyxl import load_workbook
+            wb = load_workbook(file_storage, read_only=True, data_only=True)
+            ws = wb.active
+            rows = [list(r) for r in ws.iter_rows(values_only=True)]
+        elif filename.endswith('.csv'):
+            import csv
+            import io
+            raw = file_storage.read()
+            text_data = None
+            for enc in ('utf-8-sig', 'utf-8', 'gbk', 'gb18030'):
+                try:
+                    text_data = raw.decode(enc)
+                    break
+                except UnicodeDecodeError:
+                    continue
+            if text_data is None:
+                return None, 'CSV 编码无法识别，请另存为 UTF-8 后再试'
+            rows = list(csv.reader(io.StringIO(text_data)))
+        else:
+            return None, '请上传 .xlsx 或 .csv 文件'
+    except Exception as e:
+        logger.exception('[校园版] 教师账号导入文件解析失败')
+        return None, f'解析失败：{e}'
+
+    rows = [r for r in rows if any(_normalize_text(c) for c in r)]
+    if len(rows) < 2:
+        return None, '文件内容为空或仅有表头'
+
+    headers = [_normalize_text(c).lower() for c in rows[0]]
+    username_aliases = {'手机号', '手机', '账号', '用户名', '登录账号', '联系电话', 'phone', 'mobile', 'username'}
+    name_aliases = {'姓名', '教师姓名', '老师姓名', '显示名', '名称', 'name', 'displayname', 'display_name'}
+    username_idx = next((i for i, h in enumerate(headers) if h in username_aliases), None)
+    name_idx = next((i for i, h in enumerate(headers) if h in name_aliases), None)
+
+    if username_idx is None or name_idx is None:
+        return None, '未识别到「手机号/账号」和「姓名」两列，请使用模板或检查表头'
+
+    entries = []
+    seen = set()
+    for row_no, row in enumerate(rows[1:], start=2):
+        username = _normalize_text(row[username_idx] if username_idx < len(row) else '')
+        display_name = _normalize_text(row[name_idx] if name_idx < len(row) else '')
+        if not username and not display_name:
+            continue
+        if not username or not display_name:
+            return None, f'第 {row_no} 行缺少手机号/账号或姓名'
+        if username in seen:
+            return None, f'导入文件中账号重复：{username}'
+        seen.add(username)
+        entries.append({'username': username, 'display_name': display_name})
+
+    if not entries:
+        return None, '没有可导入的教师账号'
+    return entries, None
+
+
+@app.route('/campus/teachers/template.xlsx')
+@login_required
+@campus_admin_required
+def campus_teachers_template():
+    from openpyxl import Workbook
+    import io
+    wb = Workbook()
+    ws = wb.active
+    ws.title = '教师账号'
+    ws.append(['手机号', '姓名'])
+    ws.append(['13800000001', '张老师'])
+    ws.append(['13800000002', '李老师'])
+    ws.column_dimensions['A'].width = 18
+    ws.column_dimensions['B'].width = 14
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name='openmentor_teacher_accounts_template.xlsx',
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+
+
+@app.route('/campus/teachers', methods=['GET', 'POST'])
+@login_required
+@campus_admin_required
+def campus_teachers():
+    db = SessionLocal()
+    try:
+        generated_password = None
+        if request.method == 'POST':
+            username = (request.form.get('username') or '').strip()
+            display_name = (request.form.get('display_name') or '').strip()
+            temp_password = (request.form.get('temp_password') or '').strip() or 'openmentor'
+
+            if not username:
+                flash('请填写手机号/账号', 'danger')
+            elif len(temp_password) < 6:
+                flash('临时密码长度至少为 6 个字符', 'danger')
+            elif db.query(User).filter_by(username=username).first():
+                flash('账号已存在', 'danger')
+            else:
+                teacher = User(
+                    username=username,
+                    email=_legacy_teacher_email(username),
+                    display_name=display_name or username,
+                    password=generate_password_hash(temp_password),
+                    role='teacher',
+                    is_active_flag=True,
+                    force_password_change=True,
+                )
+                db.add(teacher)
+                db.commit()
+                generated_password = temp_password
+                flash(f'教师账号「{username}」已创建，临时密码：{temp_password}', 'success')
+
+        search_query = (request.args.get('q') or '').strip()
+        try:
+            page = int(request.args.get('page', 1))
+        except (TypeError, ValueError):
+            page = 1
+        try:
+            per_page = int(request.args.get('per_page', 10))
+        except (TypeError, ValueError):
+            per_page = 10
+        if per_page not in (10, 20, 50):
+            per_page = 10
+        if page < 1:
+            page = 1
+
+        user_query = db.query(User)
+        if search_query:
+            like = f'%{search_query}%'
+            user_query = user_query.filter(
+                (User.display_name.ilike(like)) |
+                (User.username.ilike(like))
+            )
+
+        total_users = user_query.count()
+        total_pages = max((total_users + per_page - 1) // per_page, 1)
+        if page > total_pages:
+            page = total_pages
+
+        users = (
+            user_query
+            .order_by(User.role, User.id)
+            .offset((page - 1) * per_page)
+            .limit(per_page)
+            .all()
+        )
+        start_index = (page - 1) * per_page + 1 if total_users else 0
+        end_index = min(page * per_page, total_users)
+
+        stats = {}
+        for user in users:
+            task_count = db.query(Task).filter_by(user_id=user.id, is_assistant=False).count()
+            assistant_count = db.query(Task).filter_by(user_id=user.id, is_assistant=True).count()
+            roster_count = db.query(RosterEntry).filter_by(user_id=user.id).count()
+            stats[user.id] = {
+                'task_count': task_count,
+                'assistant_count': assistant_count,
+                'roster_count': roster_count,
+            }
+
+        return render_template(
+            'campus_teachers.html',
+            users=users,
+            stats=stats,
+            generated_password=generated_password,
+            search_query=search_query,
+            page=page,
+            per_page=per_page,
+            per_page_options=(10, 20, 50),
+            total_users=total_users,
+            total_pages=total_pages,
+            start_index=start_index,
+            end_index=end_index,
+        )
+    finally:
+        db.close()
+
+
+@app.route('/campus/teachers/import', methods=['POST'])
+@login_required
+@campus_admin_required
+def campus_teachers_import():
+    file_storage = request.files.get('teacher_file')
+    entries, error = _parse_teacher_import_file(file_storage) if file_storage else (None, '请选择要上传的 Excel 文件')
+    if error:
+        flash(error, 'danger')
+        return redirect(url_for('campus_teachers'))
+
+    db = SessionLocal()
+    try:
+        created = 0
+        skipped = []
+        for entry in entries:
+            username = entry['username']
+            if db.query(User).filter_by(username=username).first():
+                skipped.append(username)
+                continue
+            teacher = User(
+                username=username,
+                email=_legacy_teacher_email(username),
+                display_name=entry['display_name'],
+                password=generate_password_hash('openmentor'),
+                role='teacher',
+                is_active_flag=True,
+                force_password_change=True,
+            )
+            db.add(teacher)
+            created += 1
+        db.commit()
+
+        msg = f'已导入 {created} 个教师账号，默认密码：openmentor，首次登录需修改密码。'
+        if skipped:
+            msg += f' 已跳过 {len(skipped)} 个已存在账号：{", ".join(skipped[:8])}'
+            if len(skipped) > 8:
+                msg += ' 等'
+        flash(msg, 'success' if created else 'warning')
+        return redirect(url_for('campus_teachers'))
+    except Exception as e:
+        db.rollback()
+        logger.exception('[校园版] 批量导入教师账号失败')
+        flash(f'导入失败：{e}', 'danger')
+        return redirect(url_for('campus_teachers'))
+    finally:
+        db.close()
+
+
+def _campus_period_since(period):
+    now = datetime.now()
+    if period == 'today':
+        return datetime(now.year, now.month, now.day)
+    if period == '7d':
+        return now - timedelta(days=7)
+    if period == '90d':
+        return now - timedelta(days=90)
+    if period == 'all':
+        return None
+    return now - timedelta(days=30)
+
+
+def _campus_apply_since(query, column, since):
+    return query.filter(column >= since) if since else query
+
+
+def _campus_attachment_type(path):
+    ext = os.path.splitext(path or '')[1].lower().lstrip('.')
+    if ext in {'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'}:
+        return '图片'
+    if ext in {'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf', 'txt', 'md', 'csv'}:
+        return '文档'
+    if ext in {'mp3', 'wav', 'm4a', 'aac', 'flac', 'mp4', 'mov', 'avi', 'mkv', 'webm'}:
+        return '音视频'
+    return '其他'
+
+
+@app.route('/campus/usage')
+@login_required
+@campus_admin_required
+def campus_usage_dashboard():
+    period_options = [
+        ('30d', '近30天'),
+        ('7d', '近7天'),
+        ('90d', '近90天'),
+        ('today', '今天'),
+        ('all', '全部'),
+    ]
+    period_values = {k for k, _ in period_options}
+    period = request.args.get('period', '30d')
+    if period not in period_values:
+        period = '30d'
+    since = _campus_period_since(period)
+
+    try:
+        teacher_id = int(request.args.get('teacher_id', 0) or 0)
+    except (TypeError, ValueError):
+        teacher_id = 0
+
+    db = SessionLocal()
+    try:
+        teachers = (
+            db.query(User)
+            .filter(User.role.in_(('admin', 'teacher')))
+            .order_by(User.role, User.display_name, User.username)
+            .all()
+        )
+        teacher_ids = {u.id for u in teachers}
+        if teacher_id not in teacher_ids:
+            teacher_id = 0
+
+        def task_scope(query):
+            return query.filter(Task.user_id == teacher_id) if teacher_id else query
+
+        def submission_scope(query):
+            query = query.join(Task, Submission.task_id == Task.id)
+            return query.filter(Task.user_id == teacher_id) if teacher_id else query
+
+        def attachment_scope(query):
+            query = query.join(Task, Attachment.task_id == Task.id)
+            return query.filter(Task.user_id == teacher_id) if teacher_id else query
+
+        def conversation_scope(query):
+            query = query.join(Task, Conversation.assistant_id == Task.id)
+            return query.filter(Task.user_id == teacher_id) if teacher_id else query
+
+        def message_scope(query):
+            query = query.join(Conversation, Message.conversation_id == Conversation.id).join(Task, Conversation.assistant_id == Task.id)
+            return query.filter(Task.user_id == teacher_id) if teacher_id else query
+
+        def user_scope(query):
+            return query.filter(User.id == teacher_id) if teacher_id else query
+
+        def campus_plaza_scope(query):
+            return query.filter(CampusPlazaTemplate.owner_user_id == teacher_id) if teacher_id else query
+
+        users_query = user_scope(db.query(User).filter(User.role.in_(('admin', 'teacher'))))
+        total_users = users_query.count()
+        active_users = users_query.filter(User.is_active_flag == True).count()
+        forced_password_users = users_query.filter(User.force_password_change == True).count()
+        new_users = _campus_apply_since(users_query, User.created_at, since).count()
+
+        ai_assistants = _campus_apply_since(
+            task_scope(db.query(Task)).filter(Task.is_assistant == True),
+            Task.created_at,
+            since,
+        ).count()
+        data_tasks = _campus_apply_since(
+            task_scope(db.query(Task)).filter(Task.is_assistant == False),
+            Task.created_at,
+            since,
+        ).count()
+        conversations = _campus_apply_since(
+            conversation_scope(db.query(Conversation)),
+            Conversation.started_at,
+            since,
+        ).count()
+        submissions = _campus_apply_since(
+            submission_scope(db.query(Submission)),
+            Submission.submitted_at,
+            since,
+        ).count()
+        attachments = _campus_apply_since(
+            attachment_scope(db.query(Attachment)),
+            Attachment.created_at,
+            since,
+        ).count()
+        messages_total = _campus_apply_since(
+            message_scope(db.query(Message)),
+            Message.created_at,
+            since,
+        ).count()
+        student_messages = _campus_apply_since(
+            message_scope(db.query(Message)).filter(Message.role == 'user'),
+            Message.created_at,
+            since,
+        ).count()
+        assistant_messages = _campus_apply_since(
+            message_scope(db.query(Message)).filter(Message.role == 'assistant'),
+            Message.created_at,
+            since,
+        ).count()
+        safety_hits = _campus_apply_since(
+            message_scope(db.query(Message)).filter(Message.triggered_keyword.isnot(None)),
+            Message.created_at,
+            since,
+        ).count()
+        image_generations = _campus_apply_since(
+            message_scope(db.query(Message)).filter(Message.generated_image_path.isnot(None)),
+            Message.created_at,
+            since,
+        ).count()
+
+        campus_shared_query = _campus_apply_since(
+            campus_plaza_scope(db.query(CampusPlazaTemplate)),
+            CampusPlazaTemplate.created_at,
+            since,
+        )
+        campus_shared_templates = campus_shared_query.count()
+        campus_shared_active = campus_shared_query.filter(CampusPlazaTemplate.status == 'active').count()
+        campus_shared_disabled = campus_shared_query.filter(CampusPlazaTemplate.status == 'disabled').count()
+
+        roster_query = db.query(RosterEntry)
+        if teacher_id:
+            roster_query = roster_query.filter(RosterEntry.user_id == teacher_id)
+        roster_entries = _campus_apply_since(roster_query, RosterEntry.created_at, since).count()
+
+        report_query = db.query(StudentReport)
+        if teacher_id:
+            report_query = report_query.filter(StudentReport.user_id == teacher_id)
+        student_reports = _campus_apply_since(report_query, StudentReport.created_at, since).count()
+
+        usage_count = student_messages + submissions
+        primary_metrics = [
+            {'label': '用户数', 'value': total_users, 'sub': f'启用 {active_users} · 待改密 {forced_password_users}', 'icon': 'bi-people', 'tone': 'ink'},
+            {'label': '使用次数', 'value': usage_count, 'sub': f'学生消息 {student_messages} · 数据提交 {submissions}', 'icon': 'bi-lightning-charge', 'tone': 'green'},
+            {'label': 'AI导师数', 'value': ai_assistants, 'sub': f'对话 {conversations} · 回复 {assistant_messages}', 'icon': 'bi-robot', 'tone': 'blue'},
+            {'label': '数据任务', 'value': data_tasks, 'sub': f'提交 {submissions} · 附件 {attachments}', 'icon': 'bi-list-task', 'tone': 'amber'},
+            {'label': '对话数量', 'value': conversations, 'sub': f'消息 {messages_total} · 安全拦截 {safety_hits}', 'icon': 'bi-chat-dots', 'tone': 'red'},
+            {'label': '附件数量', 'value': attachments, 'sub': f'报告 {student_reports} · 花名册 {roster_entries}', 'icon': 'bi-paperclip', 'tone': 'violet'},
+            {'label': '校内共享', 'value': campus_shared_templates, 'sub': f'启用 {campus_shared_active} · 禁用 {campus_shared_disabled}', 'icon': 'bi-share', 'tone': 'green'},
+        ]
+
+        extra_metrics = [
+            {'label': '新增用户', 'value': new_users},
+            {'label': '学生消息', 'value': student_messages},
+            {'label': 'AI回复', 'value': assistant_messages},
+            {'label': '图片生成', 'value': image_generations},
+            {'label': '安全拦截', 'value': safety_hits},
+            {'label': '学情报告', 'value': student_reports},
+            {'label': '花名册', 'value': roster_entries},
+            {'label': '共享导师', 'value': campus_shared_templates},
+        ]
+
+        attachment_rows = _campus_apply_since(
+            attachment_scope(db.query(Attachment.file_name, Attachment.file_path, Attachment.created_at)),
+            Attachment.created_at,
+            since,
+        ).all()
+        attachment_type_counts = {'图片': 0, '文档': 0, '音视频': 0, '其他': 0}
+        for row in attachment_rows:
+            attachment_type_counts[_campus_attachment_type(row.file_name or row.file_path)] += 1
+        attachment_type_items = [{'label': k, 'value': v} for k, v in attachment_type_counts.items()]
+
+        trend_start = since
+        if not trend_start:
+            trend_start = datetime.now() - timedelta(days=13)
+        max_days = 30
+        day_count = max(1, min(max_days, (datetime.now().date() - trend_start.date()).days + 1))
+        trend_start_date = datetime.now().date() - timedelta(days=day_count - 1)
+        trend = {
+            (trend_start_date + timedelta(days=i)).isoformat(): {
+                'label': (trend_start_date + timedelta(days=i)).strftime('%m-%d'),
+                'messages': 0,
+                'submissions': 0,
+            }
+            for i in range(day_count)
+        }
+
+        msg_rows = message_scope(
+            db.query(Message.created_at).filter(
+                Message.role == 'user',
+                Message.created_at >= datetime.combine(trend_start_date, datetime.min.time())
+            )
+        ).all()
+        for (created_at,) in msg_rows:
+            if created_at:
+                key = created_at.date().isoformat()
+                if key in trend:
+                    trend[key]['messages'] += 1
+
+        sub_rows = submission_scope(
+            db.query(Submission.submitted_at).filter(
+                Submission.submitted_at >= datetime.combine(trend_start_date, datetime.min.time())
+            )
+        ).all()
+        for (submitted_at,) in sub_rows:
+            if submitted_at:
+                key = submitted_at.date().isoformat()
+                if key in trend:
+                    trend[key]['submissions'] += 1
+
+        trend_items = list(trend.values())
+        trend_max = max([item['messages'] + item['submissions'] for item in trend_items] + [1])
+
+        scoped_teacher_ids = [teacher_id] if teacher_id else list(teacher_ids)
+        if scoped_teacher_ids:
+            assistant_by_teacher = {
+                uid: count for uid, count in db.query(Task.user_id, func.count(Task.id))
+                .filter(Task.user_id.in_(scoped_teacher_ids), Task.is_assistant == True)
+                .group_by(Task.user_id)
+                .all()
+            }
+            data_task_by_teacher = {
+                uid: count for uid, count in db.query(Task.user_id, func.count(Task.id))
+                .filter(Task.user_id.in_(scoped_teacher_ids), Task.is_assistant == False)
+                .group_by(Task.user_id)
+                .all()
+            }
+            submission_by_teacher = {
+                uid: count for uid, count in submission_scope(db.query(Task.user_id, func.count(Submission.id)))
+                .group_by(Task.user_id)
+                .all()
+            }
+            conversation_by_teacher = {
+                uid: count for uid, count in conversation_scope(db.query(Task.user_id, func.count(Conversation.id)))
+                .group_by(Task.user_id)
+                .all()
+            }
+            attachment_by_teacher = {
+                uid: count for uid, count in attachment_scope(db.query(Task.user_id, func.count(Attachment.id)))
+                .group_by(Task.user_id)
+                .all()
+            }
+        else:
+            assistant_by_teacher = {}
+            data_task_by_teacher = {}
+            submission_by_teacher = {}
+            conversation_by_teacher = {}
+            attachment_by_teacher = {}
+
+        teacher_lookup = {u.id: u for u in teachers}
+        teacher_rows = []
+        for uid in scoped_teacher_ids:
+            user = teacher_lookup.get(uid)
+            if not user:
+                continue
+            row_usage = (submission_by_teacher.get(uid, 0) or 0) + (conversation_by_teacher.get(uid, 0) or 0)
+            teacher_rows.append({
+                'name': user.display_name or user.username,
+                'username': user.username,
+                'is_active': user.is_active,
+                'usage': row_usage,
+                'assistants': assistant_by_teacher.get(uid, 0) or 0,
+                'data_tasks': data_task_by_teacher.get(uid, 0) or 0,
+                'submissions': submission_by_teacher.get(uid, 0) or 0,
+                'conversations': conversation_by_teacher.get(uid, 0) or 0,
+                'attachments': attachment_by_teacher.get(uid, 0) or 0,
+            })
+        teacher_rows = sorted(teacher_rows, key=lambda r: (r['usage'], r['assistants'], r['data_tasks']), reverse=True)[:10]
+
+        recent_conversations = (
+            conversation_scope(db.query(Conversation, Task, User))
+            .join(User, Task.user_id == User.id)
+            .order_by(Conversation.last_active_at.desc())
+            .limit(8)
+            .all()
+        )
+        recent_items = [
+            {
+                'teacher': user.display_name or user.username,
+                'assistant': task.title,
+                'student': f'{conv.student_class} · {conv.student_name}',
+                'time': conv.last_active_at.strftime('%m-%d %H:%M') if conv.last_active_at else '-',
+            }
+            for conv, task, user in recent_conversations
+        ]
+
+        selected_teacher = teacher_lookup.get(teacher_id)
+        return render_template(
+            'campus_usage.html',
+            period=period,
+            period_options=period_options,
+            teacher_id=teacher_id,
+            teachers=teachers,
+            selected_teacher=selected_teacher,
+            since=since,
+            primary_metrics=primary_metrics,
+            extra_metrics=extra_metrics,
+            attachment_type_items=attachment_type_items,
+            trend_items=trend_items,
+            trend_max=trend_max,
+            teacher_rows=teacher_rows,
+            recent_items=recent_items,
+        )
+    finally:
+        db.close()
+
+
+@app.route('/campus/teachers/<int:user_id>/toggle', methods=['POST'])
+@login_required
+@campus_admin_required
+def campus_teacher_toggle(user_id):
+    if user_id == current_user.id:
+        flash('不能禁用当前登录的管理员账号', 'danger')
+        return redirect(url_for('campus_teachers'))
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).get(user_id)
+        if not user:
+            flash('账号不存在', 'danger')
+        elif user.role == 'admin':
+            flash('暂不允许在这里禁用管理员账号', 'danger')
+        else:
+            user.is_active_flag = not user.is_active_flag
+            db.commit()
+            flash(f'已{"启用" if user.is_active_flag else "禁用"}教师账号「{user.username}」', 'success')
+        return redirect(url_for('campus_teachers'))
+    finally:
+        db.close()
+
+
+@app.route('/campus/teachers/<int:user_id>/reset_password', methods=['POST'])
+@login_required
+@campus_admin_required
+def campus_teacher_reset_password(user_id):
+    temp_password = (request.form.get('temp_password') or '').strip() or _generate_temp_password()
+    if len(temp_password) < 6:
+        flash('临时密码长度至少为 6 个字符', 'danger')
+        return redirect(url_for('campus_teachers'))
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).get(user_id)
+        if not user:
+            flash('账号不存在', 'danger')
+        elif user.role == 'admin' and user.id != current_user.id:
+            flash('暂不允许重置其他管理员密码', 'danger')
+        else:
+            user.password = generate_password_hash(temp_password)
+            user.force_password_change = True
+            db.commit()
+            flash(f'账号「{user.username}」密码已重置，临时密码：{temp_password}', 'success')
+        return redirect(url_for('campus_teachers'))
+    finally:
+        db.close()
+
 @app.route('/analyze/<int:task_id>/smart_analyze', methods=['GET'])
 @login_required
 def smart_analyze(task_id):
@@ -3605,6 +4873,26 @@ def assistant_audit_export(assistant_id):
 # 单条对话条目格式化的字符长度上限（避免 token 爆炸）
 _REPORT_MAX_CONTENT_PER_MSG = 400
 _REPORT_MAX_TOTAL_CHARS = 30000  # 喂给 AI 的总字符数上限（约 ~12K tokens）
+_REPORT_MAX_CUSTOM_INSTRUCTION_CHARS = 3000
+
+
+def _clean_report_instruction(value):
+    value = (value or '').strip()
+    if len(value) > _REPORT_MAX_CUSTOM_INSTRUCTION_CHARS:
+        value = value[:_REPORT_MAX_CUSTOM_INSTRUCTION_CHARS]
+    return value
+
+
+def _report_instruction_block(value):
+    instruction = _clean_report_instruction(value)
+    if not instruction:
+        return ''
+    return f"""
+
+【老师本次报告要求】
+{instruction}
+
+请优先满足老师本次报告要求；如果老师没有指定报告结构，再参考下面的默认结构。"""
 
 
 def _format_messages_for_report(conv, max_per_msg=_REPORT_MAX_CONTENT_PER_MSG):
@@ -3708,6 +4996,7 @@ def assistant_student_report(assistant_id):
 
         student_class = (request.form.get('student_class') or '').strip()
         student_name = (request.form.get('student_name') or '').strip()
+        report_instruction = _clean_report_instruction(request.form.get('report_instruction'))
         if not student_class or not student_name:
             return jsonify({'code': 400, 'message': '缺少 student_class / student_name'}), 400
 
@@ -3743,6 +5032,7 @@ def assistant_student_report(assistant_id):
 
 【对话记录】
 {chat_text}
+{_report_instruction_block(report_instruction)}
 
 请输出一份**结构化、可执行**的 Markdown 报告，包含以下模块（每个模块 2-4 句话即可，避免空话）：
 
@@ -3872,10 +5162,32 @@ def assistant_class_report(assistant_id):
             return jsonify({'code': 404, 'message': 'AI 导师不存在或无权访问'}), 404
 
         class_filter = (request.form.get('class_name') or '').strip()
+        report_instruction = _clean_report_instruction(request.form.get('report_instruction'))
+        selected_raw = (request.form.get('selected_students') or '').strip()
+        selected_lookup = set()
+        if selected_raw:
+            try:
+                selected_items = json.loads(selected_raw)
+            except json.JSONDecodeError:
+                return jsonify({'code': 400, 'message': '选中学生参数格式错误'}), 400
+            if not isinstance(selected_items, list):
+                return jsonify({'code': 400, 'message': '选中学生参数格式错误'}), 400
+            for item in selected_items:
+                if not isinstance(item, dict):
+                    continue
+                cls = (item.get('student_class') or item.get('class_name') or '').strip()
+                name = (item.get('student_name') or item.get('name') or '').strip()
+                if cls and name:
+                    selected_lookup.add((cls, name))
+            if not selected_lookup:
+                return jsonify({'code': 400, 'message': '没有有效的选中学生'}), 400
+
         q = db.query(Conversation).filter_by(assistant_id=assistant.id)
-        if class_filter:
+        if class_filter and not selected_lookup:
             q = q.filter(Conversation.student_class == class_filter)
         convs = q.order_by(Conversation.student_class, Conversation.student_name, Conversation.started_at).all()
+        if selected_lookup:
+            convs = [c for c in convs if (c.student_class, c.student_name) in selected_lookup]
         if not convs:
             return jsonify({'code': 400, 'message': '没有匹配的对话记录'}), 400
 
@@ -3903,7 +5215,7 @@ def assistant_class_report(assistant_id):
             return jsonify({'code': 400, 'message': '对话内容过多，请按班级缩小范围后再生成'}), 400
         chat_text = '\n'.join(truncated_blocks)
 
-        scope_label = f'班级「{class_filter}」' if class_filter else '全部学生'
+        scope_label = f'已选 {len(selected_lookup)} 名学生' if selected_lookup else (f'班级「{class_filter}」' if class_filter else '全部学生')
         meta_prompt = f"""你是一位有教育心理学背景的学情分析师。请基于以下"AI 助教 {scope_label}"的全部对话记录，为老师生成一份**班级级别**的学情报告。
 
 【AI 助教信息】
@@ -3918,6 +5230,7 @@ def assistant_class_report(assistant_id):
 
 【对话记录（按学生分组）】
 {chat_text}
+{_report_instruction_block(report_instruction)}
 
 请输出一份**结构化、可执行**的 Markdown 报告：
 
@@ -3966,8 +5279,8 @@ def assistant_class_report(assistant_id):
                 try:
                     rec = StudentReport(
                         user_id=uid, assistant_id=aid, report_type='class',
-                        student_class=class_filter or None, student_name=None,
-                        scope_label=(f'班级「{class_filter}」' if class_filter else '全部学生'),
+                        student_class=(None if selected_lookup else (class_filter or None)), student_name=None,
+                        scope_label=scope_label,
                         content=full_text, model_used=model_used,
                         student_count=student_count, message_count=total_msgs, omitted=omitted,
                     )
@@ -3978,7 +5291,7 @@ def assistant_class_report(assistant_id):
                         'omitted_students': omitted, 'model_used': model_used,
                         'class_filter': class_filter,
                         'assistant_title': assistant_title,
-                        'scope_label': (f'班级「{class_filter}」' if class_filter else '全部学生'),
+                        'scope_label': scope_label,
                         'created_at': rec.created_at.strftime('%Y-%m-%d %H:%M'),
                     }
                 finally:
@@ -3989,7 +5302,7 @@ def assistant_class_report(assistant_id):
                 'omitted_students': omitted, 'model_used': model_used,
                 'class_filter': class_filter,
                 'assistant_title': assistant_title,
-                'scope_label': (f'班级「{class_filter}」' if class_filter else '全部学生'),
+                'scope_label': scope_label,
             }
             return Response(
                 stream_with_context(_stream_report_sse(meta_prompt, ai_config, meta_payload, _persist_class)),
@@ -4006,9 +5319,9 @@ def assistant_class_report(assistant_id):
             user_id=current_user.id,
             assistant_id=assistant.id,
             report_type='class',
-            student_class=class_filter or None,
+            student_class=(None if selected_lookup else (class_filter or None)),
             student_name=None,
-            scope_label=(f'班级「{class_filter}」' if class_filter else '全部学生'),
+            scope_label=scope_label,
             content=report,
             model_used=ai_config.selected_model,
             student_count=student_count,
@@ -4030,6 +5343,7 @@ def assistant_class_report(assistant_id):
             'model_used': ai_config.selected_model,
             'class_filter': class_filter,
             'assistant_title': assistant.title,
+            'scope_label': scope_label,
             'created_at': rec.created_at.strftime('%Y-%m-%d %H:%M'),
         })
     finally:
@@ -4546,11 +5860,181 @@ def assistant_clone(assistant_id):
         db.close()
 
 
-# ---- AI 导师广场（基于 quickform.cn 公开任务作为后端存储）----
+# ---- AI 导师广场（公共广场使用同步表格；旧 QuickForm 数据源保留用于回退 / 迁移）----
 
-OM_PLAZA_API_URL = 'https://quickform.cn/api/pa9eaj18kz'
+OM_LEGACY_PLAZA_API_URL = 'https://quickform.cn/api/pa9eaj18kz'
 OM_PLAZA_PRESET_SUBJECTS = ['语文', '数学', '英语', '物理', '化学', '生物', '历史', '政治', '地理', '信息', '科学', '音乐', '体育', '美术', '心理', '劳动', '综合实践', '通用']
 OM_PLAZA_PRESET_GRADES = ['小学', '初中', '高中', '大学', '培训']
+
+
+def _lark_public_plaza_configured():
+    return all((os.getenv(k) or '').strip() for k in ('LARK_APP_ID', 'LARK_APP_SECRET', 'LARK_PLAZA_BASE_TOKEN', 'LARK_PLAZA_TABLE_ID'))
+
+
+def _public_plaza_config():
+    return {
+        'base_token': (os.getenv('LARK_PLAZA_BASE_TOKEN') or '').strip(),
+        'table_id': (os.getenv('LARK_PLAZA_TABLE_ID') or '').strip(),
+        'view_id': (os.getenv('LARK_PLAZA_VIEW_ID') or '').strip(),
+        'data_field': (os.getenv('LARK_PLAZA_DATA_FIELD') or '数据').strip() or '数据',
+        'enabled_field': (os.getenv('LARK_PLAZA_ENABLED_FIELD') or '启动').strip() or '启动',
+    }
+
+
+def _public_plaza_records_url():
+    cfg = _public_plaza_config()
+    return f'https://open.feishu.cn/open-apis/bitable/v1/apps/{cfg["base_token"]}/tables/{cfg["table_id"]}/records'
+
+
+def _public_plaza_enabled(value):
+    if value is None:
+        return True
+    if isinstance(value, bool):
+        return value
+    text_value = _prompt_matrix_cell_text(value).strip().lower()
+    if not text_value:
+        return True
+    return text_value not in {'0', 'false', 'no', 'n', '否', '禁用', '停用', 'disabled'}
+
+
+def _public_plaza_data_text(value):
+    if value is None:
+        return ''
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            if isinstance(item, dict):
+                parts.append(str(item.get('text') or item.get('name') or item.get('value') or ''))
+            else:
+                parts.append(str(item))
+        return ''.join(parts).strip()
+    if isinstance(value, dict):
+        return str(value.get('text') or value.get('name') or value.get('value') or '').strip()
+    return str(value).strip()
+
+
+def _normalize_legacy_public_plaza_record(record):
+    if not isinstance(record, dict):
+        return None
+    if isinstance(record.get('config'), dict):
+        return record
+    for key in ('data', 'fields', 'payload', 'form_data'):
+        nested = record.get(key)
+        if isinstance(nested, dict) and isinstance(nested.get('config'), dict):
+            return nested
+    return None
+
+
+def _write_legacy_public_plaza_payload(payload):
+    resp = requests.post(OM_LEGACY_PLAZA_API_URL, json=payload, timeout=10)
+    if not resp.ok:
+        raise RuntimeError(resp.text[:200] or f'HTTP {resp.status_code}')
+    _PUBLIC_PLAZA_MEMORY_CACHE.update({'ts': 0, 'submissions': None})
+    return True
+
+
+def _fetch_legacy_public_plaza_submissions():
+    resp = requests.get(f'{OM_LEGACY_PLAZA_API_URL}/all', timeout=10)
+    try:
+        data = resp.json()
+    except (ValueError, json.JSONDecodeError):
+        data = {}
+    if not resp.ok:
+        raise RuntimeError(data.get('message') or resp.text[:200] or f'HTTP {resp.status_code}')
+    records = data.get('submissions') or data.get('data') or data.get('items') or []
+    submissions = []
+    for record in records:
+        item = _normalize_legacy_public_plaza_record(record)
+        if item:
+            submissions.append(item)
+    return submissions
+
+
+def _write_public_plaza_payload(payload):
+    if not _lark_public_plaza_configured():
+        return _write_legacy_public_plaza_payload(payload)
+    cfg = _public_plaza_config()
+    headers = {
+        'Authorization': f'Bearer {_get_lark_tenant_access_token()}',
+        'Content-Type': 'application/json',
+    }
+    resp = requests.post(
+        _public_plaza_records_url(),
+        headers=headers,
+        json={'fields': {cfg['data_field']: json.dumps(payload, ensure_ascii=False)}},
+        timeout=10,
+    )
+    try:
+        data = resp.json()
+    except (ValueError, json.JSONDecodeError):
+        data = {}
+    if not resp.ok:
+        raise RuntimeError(data.get('msg') or data.get('message') or resp.text[:200] or f'HTTP {resp.status_code}')
+    if data.get('code') not in (0, None):
+        raise RuntimeError(data.get('msg') or '写入公共广场失败')
+    _PUBLIC_PLAZA_MEMORY_CACHE.update({'ts': 0, 'submissions': None})
+    return data.get('data') or {}
+
+
+def _fetch_public_plaza_submissions():
+    if not _lark_public_plaza_configured():
+        return _fetch_legacy_public_plaza_submissions()
+    cfg = _public_plaza_config()
+    headers = {'Authorization': f'Bearer {_get_lark_tenant_access_token()}'}
+    params = {'page_size': 100}
+    if cfg['view_id']:
+        params['view_id'] = cfg['view_id']
+    submissions = []
+    page_token = ''
+    while True:
+        if page_token:
+            params['page_token'] = page_token
+        resp = requests.get(_public_plaza_records_url(), headers=headers, params=params, timeout=10)
+        try:
+            data = resp.json()
+        except (ValueError, json.JSONDecodeError):
+            data = {}
+        if not resp.ok:
+            raise RuntimeError(data.get('msg') or data.get('message') or resp.text[:200] or f'HTTP {resp.status_code}')
+        if data.get('code') not in (0, None):
+            raise RuntimeError(data.get('msg') or '读取公共广场失败')
+        payload = data.get('data') or {}
+        for item in payload.get('items') or []:
+            fields = item.get('fields') or {}
+            enabled_value = fields.get(cfg['enabled_field'])
+            if enabled_value is None and cfg['enabled_field'] != '启动':
+                enabled_value = fields.get('启动')
+            if enabled_value is None and cfg['enabled_field'] != '启用':
+                enabled_value = fields.get('启用')
+            if not _public_plaza_enabled(enabled_value):
+                continue
+            raw = _public_plaza_data_text(fields.get(cfg['data_field']))
+            if not raw:
+                continue
+            try:
+                parsed = json.loads(raw)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                logger.warning('[公共广场] 跳过无法解析的数据记录')
+                continue
+            if isinstance(parsed, dict) and isinstance(parsed.get('config'), dict):
+                submissions.append(parsed)
+        if not payload.get('has_more'):
+            break
+        page_token = payload.get('page_token') or ''
+        if not page_token:
+            break
+    return submissions
+
+
+def _load_public_plaza_submissions(force_refresh=False):
+    now = time.time()
+    if not force_refresh and _PUBLIC_PLAZA_MEMORY_CACHE['submissions'] is not None and now - _PUBLIC_PLAZA_MEMORY_CACHE['ts'] < PUBLIC_PLAZA_CACHE_TTL_SECONDS:
+        return _PUBLIC_PLAZA_MEMORY_CACHE['submissions']
+    submissions = _fetch_public_plaza_submissions()
+    _PUBLIC_PLAZA_MEMORY_CACHE.update({'ts': now, 'submissions': submissions})
+    return submissions
 
 
 @app.route('/changelog')
@@ -4566,16 +6050,28 @@ def plaza():
     """AI 导师广场页面：浏览全国老师分享的 AI 导师，一键克隆"""
     return render_template(
         'plaza.html',
-        plaza_api_url=OM_PLAZA_API_URL,
+        plaza_api_url=url_for('api_public_plaza_templates'),
         preset_subjects=OM_PLAZA_PRESET_SUBJECTS,
         preset_grades=OM_PLAZA_PRESET_GRADES,
     )
 
 
+@app.route('/api/plaza/public/templates')
+@login_required
+def api_public_plaza_templates():
+    """公共广场列表。返回格式保持与旧 QuickForm /all 兼容。"""
+    try:
+        force_refresh = request.args.get('refresh') in {'1', 'true', 'yes'}
+        return jsonify({'code': 200, 'success': True, 'submissions': _load_public_plaza_submissions(force_refresh=force_refresh)})
+    except Exception as e:
+        logger.warning(f'[公共广场] 读取失败: {e}')
+        return jsonify({'code': 500, 'success': False, 'message': str(e), 'submissions': []}), 500
+
+
 @app.route('/api/assistant/<int:assistant_id>/share_to_plaza', methods=['POST'])
 @login_required
 def assistant_share_to_plaza(assistant_id):
-    """老师把自己的 AI 导师配置分享到公共广场。"""
+    """老师把自己的 AI 导师配置分享到公共广场、校内广场或两者。"""
     db = SessionLocal()
     try:
         assistant = db.query(Task).filter_by(
@@ -4590,6 +6086,17 @@ def assistant_share_to_plaza(assistant_id):
         purpose = (body.get('purpose') or '').strip()[:60]
         if not subject or not grade or not purpose:
             return jsonify({'code': 400, 'message': '学科 / 学段 / 用途都是必填'}), 400
+
+        destinations = body.get('destinations')
+        if not isinstance(destinations, list):
+            destinations = ['public']
+        destinations = {str(x).strip() for x in destinations if str(x).strip()}
+        allowed_destinations = {'public'}
+        if is_campus_edition():
+            allowed_destinations.add('campus')
+        destinations = destinations & allowed_destinations
+        if not destinations:
+            return jsonify({'code': 400, 'message': '请选择至少一种分享方式'}), 400
 
         nickname = (body.get('nickname') or '').strip()[:30]
         school = (body.get('school') or '').strip()[:60]
@@ -4608,31 +6115,101 @@ def assistant_share_to_plaza(assistant_id):
             'nickname': nickname or '匿名',
             'school': school,
             'shared_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'om_version': '1.1.4',
+            'om_version': _parse_latest_version_from_changelog(),
             'config': tpl,
         }
 
-        try:
-            resp = requests.post(OM_PLAZA_API_URL, json=plaza_payload, timeout=10)
-            if resp.status_code != 200:
-                return jsonify({
-                    'code': 500,
-                    'message': f'公共广场服务返回 HTTP {resp.status_code}: {resp.text[:200]}'
-                }), 500
-        except requests.exceptions.RequestException as e:
-            logger.exception(f'分享 AI 导师到公共广场失败: {e}')
-            return jsonify({'code': 500, 'message': f'连接公共广场服务失败: {e}'}), 500
+        shared_targets = []
+        if 'public' in destinations:
+            try:
+                _write_public_plaza_payload(plaza_payload)
+                shared_targets.append('公共广场')
+            except Exception as e:
+                logger.exception(f'分享 AI 导师到公共广场失败: {e}')
+                return jsonify({'code': 500, 'message': f'连接公共广场服务失败: {e}'}), 500
+
+        if 'campus' in destinations:
+            local_tpl = CampusPlazaTemplate(
+                source_assistant_id=assistant.id,
+                owner_user_id=current_user.id,
+                title=tpl.get('title') or assistant.title,
+                subject=subject,
+                grade=grade,
+                purpose=purpose,
+                description=plaza_payload['description'],
+                nickname=nickname or (current_user.display_name or current_user.username),
+                school=school,
+                config_json=json.dumps(tpl, ensure_ascii=False),
+                status='active',
+            )
+            db.add(local_tpl)
+            db.commit()
+            shared_targets.append('校内广场')
 
         return jsonify({
             'code': 200,
             'success': True,
-            'message': '已成功分享到公共广场',
+            'message': '已成功分享到' + '、'.join(shared_targets),
         })
     finally:
         db.close()
 
 
-@app.route('/api/plaza/clone', methods=['POST'])
+@app.route('/api/campus/plaza/templates')
+@login_required
+def campus_plaza_templates():
+    """校园版校内广场模板列表。普通教师只看启用项；admin 可看全部并管理状态。"""
+    if not is_campus_edition():
+        return jsonify({'code': 404, 'message': '仅校园版支持校内广场'}), 404
+
+    db = SessionLocal()
+    try:
+        q = db.query(CampusPlazaTemplate, User).join(User, CampusPlazaTemplate.owner_user_id == User.id)
+        if not is_admin_user(current_user):
+            q = q.filter(CampusPlazaTemplate.status == 'active')
+        rows = q.order_by(CampusPlazaTemplate.created_at.desc()).all()
+        items = []
+        for rec, user in rows:
+            try:
+                config = json.loads(rec.config_json or '{}')
+            except Exception:
+                config = {}
+            items.append({
+                'id': rec.id,
+                'subject': rec.subject,
+                'grade': rec.grade,
+                'purpose': rec.purpose,
+                'description': rec.description or '',
+                'nickname': rec.nickname or (user.display_name or user.username),
+                'school': rec.school or '',
+                'shared_at': rec.created_at.strftime('%Y-%m-%d %H:%M:%S') if rec.created_at else '',
+                'status': rec.status,
+                'owner_username': user.username,
+                'config': config,
+            })
+        return jsonify({'code': 200, 'success': True, 'submissions': items, 'can_manage': is_admin_user(current_user)})
+    finally:
+        db.close()
+
+
+@app.route('/api/campus/plaza/templates/<int:template_id>/toggle', methods=['POST'])
+@login_required
+@campus_admin_required
+def campus_plaza_template_toggle(template_id):
+    """admin 启用/禁用校内广场模板；不做删除。"""
+    db = SessionLocal()
+    try:
+        rec = db.query(CampusPlazaTemplate).get(template_id)
+        if not rec:
+            return jsonify({'code': 404, 'message': '模板不存在'}), 404
+        rec.status = 'disabled' if rec.status == 'active' else 'active'
+        rec.updated_at = datetime.now()
+        db.commit()
+        return jsonify({'code': 200, 'success': True, 'status': rec.status})
+    finally:
+        db.close()
+
+
 @app.route('/api/plaza/clone', methods=['POST'])
 @login_required
 def plaza_clone():

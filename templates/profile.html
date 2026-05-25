@@ -113,9 +113,11 @@
                     <li class="nav-item">
                         <a class="nav-link" id="password-tab" data-bs-toggle="tab" href="#password">用户信息修改</a>
                     </li>
+                    {% if not om_is_campus %}
                     <li class="nav-item">
                         <a class="nav-link" id="init-tab" data-bs-toggle="tab" href="#init">系统初始化</a>
                     </li>
+                    {% endif %}
                 </ul>
                 
                 <div class="tab-content">
@@ -292,7 +294,7 @@
                             
                             <div class="alert alert-secondary mt-4" style="border-radius: 8px; background-color: #F7F4EC; border: 1px solid #E5E0D8;">
                                 <p style="margin-bottom: 0.5rem;"><strong>说明：</strong></p>
-                                <p style="margin-bottom: 0; color: #6B6760;">在“<a href="https://quickform.cn/" target=“_blank" rel=“noopener”>QuickForm在线版</a>”（quickform.cn）中调试数据任务容易成功，尤其是"数据大屏"功能。我们推荐用在线版新建数据任务，再导入到 OpenMentor。</p>
+                                <p style="margin-bottom: 0; color: #6B6760;">在“<a href="https://quickform.cn/" target=“_blank" rel=“noopener”>QuickForm在线版</a>”（quickform.cn）中调试数据任务容易成功，尤其是"数据大屏"功能。我们推荐用在线版新建数据任务，再导入到校园版或者教师版。</p>
                             </div>
                         </form>
                     </div>
@@ -302,6 +304,14 @@
                         <div class="card mb-4" style="border: 1px solid #E5E0D8; border-radius: 8px;">
                             <div class="card-body" style="padding: 1.5rem;">
                                 <h6 style="font-weight: 600; color: #141413; margin-bottom: 1rem;">修改用户名</h6>
+                                {% if om_is_campus %}
+                                <div class="alert alert-secondary" style="border-radius: 8px;">
+                                    当前角色：<strong>{{ user.role }}</strong>
+                                    {% if user.force_password_change %}
+                                    <span class="ms-2 text-danger">首次登录请先修改密码</span>
+                                    {% endif %}
+                                </div>
+                                {% endif %}
                                 <form method="POST" action="{{ url_for('profile', next=next_page) if next_page else url_for('profile') }}">
                                     <input type="hidden" name="active_tab" value="password">
                                     <input type="hidden" name="change_username" value="1">
@@ -351,6 +361,7 @@
                     </div>
                     
                     <!-- 系统初始化标签页 -->
+                    {% if not om_is_campus %}
                     <div class="tab-pane fade" id="init">
                         <div class="alert alert-warning" style="border-radius: 8px;">
                             <p style="margin-bottom: 0.5rem;"><strong>警告：</strong></p>
@@ -360,6 +371,7 @@
                         <button type="button" id="initSystemBtn" class="btn" style="background-color: #9A3A33; color: white; font-weight: 500; border-radius: 8px; padding: 0.625rem 1.5rem;">执行系统初始化</button>
                         <div id="initStatus" class="mt-3" style="display: none;"></div>
                     </div>
+                    {% endif %}
                 </div>
             </div>
         </div>

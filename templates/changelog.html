@@ -71,6 +71,22 @@
         font-size: 0.85rem;
         top: 0.45rem;
     }
+    .om-changelog ul.feat-list li.campus-release-divider {
+        border-top: 1px solid var(--om-border);
+        margin: 0.85rem 0 0.45rem;
+        padding: 0;
+    }
+    .om-changelog ul.feat-list li.campus-release-divider::before,
+    .om-changelog ul.feat-list li.campus-release-heading::before {
+        content: none;
+    }
+    .om-changelog ul.feat-list li.campus-release-heading {
+        padding: 0.15rem 0 0.25rem;
+        color: var(--om-muted);
+        font-size: 0.82rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+    }
     .om-changelog ul.feat-list li strong { color: var(--om-ink); font-weight: 600; }
     .om-changelog .timeline-foot {
         text-align: center;
@@ -91,8 +107,30 @@
         </div>
     </div>
 
-    <!-- v1.3.0 -->
+    <!-- v1.4.0 -->
     <div class="release latest">
+        <div class="release-head">
+            <span class="release-version">v1.4.0</span>
+            <span class="release-date">2026-05-25</span>
+        </div>
+        <p class="release-tagline">数据维护优化 + HTML 在线编辑 + 学情报告增强</p>
+        <ul class="feat-list">
+            <li><strong>数据使用矩阵支持远程维护</strong>：数据任务详情页的数据使用矩阵现在支持从统一数据源读取，新增或调整场景卡片、提示词与演示视频时，不再需要修改项目代码。</li>
+            <li><strong>数据使用矩阵同步入口</strong>：页面提供同步入口，更新内容后可以立即刷新矩阵；系统也会保留本地默认内容作为兜底，避免网络异常时页面空白。</li>
+            <li><strong>公共广场数据优化</strong>：公共广场的共享模板改为更易维护的统一数据结构，并支持通过状态字段控制模板是否展示；旧公开接口仍作为兼容兜底。</li>
+            <li><strong>公共广场刷新优化</strong>：导师广场支持手动刷新与定时刷新，老师可以更快看到最新共享的 AI 导师模板。</li>
+            <li><strong>首页打卡优化</strong>：打卡提交与地图统计统一由后端接口处理，减少前端页面对外部接口地址的直接依赖，同时保留旧数据读取兼容。</li>
+            <li><strong>矩阵排序更稳定</strong>：数据使用矩阵按分类和序号稳定排序，后续添加新场景时能自动进入对应分类，不影响老师原有复制、查看和演示操作。</li>
+            <li><strong>HTML 文件在线编辑</strong>：数据任务中上传的 HTML 文件支持在线打开编辑，老师可以直接在后台修改采集页面或数据大屏页面。</li>
+            <li><strong>HTML 链接一键修复</strong>：在线编辑器可识别并替换旧的数据接口链接；带 AI 导师悬浮球的页面也可以选择目标导师后一键修复学生访问链接。</li>
+            <li><strong>HTML 文件下载</strong>：任务详情页为上传的 HTML 文件新增「下载」按钮，在线编辑后的文件也能重新下载到本地保存。</li>
+            <li><strong>AI 学情报告增强</strong>：对话审计页支持单学生生成报告，也支持勾选学生后批量生成；生成前会弹出提示词，老师可以确认或按课堂需要修改。</li>
+            <li><strong>对话审计按钮更紧凑</strong>：学生列表中的「查看 / 报告 / 封禁」按钮统一为更短文案和更紧凑尺寸，尽量保持在同一行显示。</li>
+        </ul>
+    </div>
+
+    <!-- v1.3.0 -->
+    <div class="release">
         <div class="release-head">
             <span class="release-version">v1.3.0</span>
             <span class="release-date">2026-05-23</span>
@@ -113,6 +151,13 @@
             <li><strong>OpenMentor Skill 入口</strong>：页脚新增 OpenMentor Skill 链接，方便需要 AI Agent 辅助部署、配置和使用的老师查看配套 Skill。</li>
             <li><strong>复制与配置稳定性优化</strong>：提示词复制增加剪贴板 API 与传统复制兜底；保存某个模型配置时，也会尽量保留其他模型已有配置。</li>
             <li><strong>数据安全保护</strong>：启动时增加运行数据保护检查；如果数据库缺失但上传文件或报告目录中已有数据，会停止启动并提示检查数据库，避免静默创建空库造成误解。</li>
+            {% if om_is_campus %}
+            <li class="campus-release-divider" aria-hidden="true"></li>
+            <li class="campus-release-heading">校园版更新</li>
+            <li><strong>内部广场</strong>：新增内部 AI 导师共享能力，老师可以把适合本单位使用的 AI 导师模板共享到内部广场，其他老师可直接浏览和克隆使用。</li>
+            <li><strong>账号管理</strong>：新增管理员账号管理入口，支持创建教师账号、批量导入账号、重置密码、启用 / 禁用账号，并保留教师已有数据。</li>
+            <li><strong>使用大屏</strong>：新增整体使用情况大屏，集中展示用户数、AI 导师数、数据任务数、对话数量、提交数据、附件数量和内部共享导师等统计。</li>
+            {% endif %}
         </ul>
     </div>
 
