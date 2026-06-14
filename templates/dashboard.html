@@ -19,8 +19,20 @@
                 <div class="card h-100">
                     <a href="{{ url_for('task_detail', task_id=task.id) }}" class="text-decoration-none">
                         <div class="card-header" style="padding-bottom: 0.75rem;">
-                            <h5 class="card-title mb-2" style="color: white; font-weight: 600;">{{ task.title }}</h5>
+                            <h5 class="card-title mb-2" style="color: white; font-weight: 600;">
+                                {% if task.pinned %}<i class="bi bi-pin-angle-fill" style="color: #F5E6DD;" title="已置顶"></i> {% endif %}{{ task.title }}
+                            </h5>
                             <div class="d-flex gap-2 flex-wrap">
+                                {% if task.pinned %}
+                                <span class="badge" style="background-color: #D97757; font-size: 0.75rem;">
+                                    <i class="bi bi-pin-angle-fill"></i> 置顶
+                                </span>
+                                {% endif %}
+                                {% if task.template_key %}
+                                <span class="badge" style="background-color: #2D2A24; font-size: 0.75rem;">
+                                    <i class="bi bi-box-seam"></i> 内置模板
+                                </span>
+                                {% endif %}
                                 {% if task.sharing_type == 'organization' %}
                                 <span class="badge" style="background-color: #C56548; font-size: 0.75rem;">
                                     <i class="bi bi-building"></i> 组织共享
@@ -61,6 +73,11 @@
                     </a>
                     <div class="card-footer" style="background-color: #F7F4EC; border-top: 1px solid #E5E0D8; padding: 1rem;">
                         <div class="d-flex flex-wrap align-items-center gap-2" style="min-width: 0;">
+                            <button type="button" class="btn btn-sm btn-pin" data-task-id="{{ task.id }}" data-pinned="{{ '1' if task.pinned else '0' }}"
+                                    title="{{ '取消置顶' if task.pinned else '置顶' }}"
+                                    style="font-weight: 500; background-color: {{ '#D97757' if task.pinned else 'white' }}; color: {{ 'white' if task.pinned else '#A04D38' }}; border: 1px solid #D97757; height: 36px; width: 36px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                                <i class="bi {{ 'bi-pin-angle-fill' if task.pinned else 'bi-pin-angle' }}"></i>
+                            </button>
                             <a href="{{ url_for('export_data', task_id=task.id) }}" class="btn btn-sm" style="font-weight: 500; background-color: white; color: #5B7553; border: 1px solid #5B7553; height: 36px; display: inline-flex; align-items: center; justify-content: center; white-space: nowrap; flex-shrink: 0;">
                                 导出
                             </a>
@@ -129,6 +146,29 @@
             btn.innerHTML = originalText;
         }, 2000);
     }
+
+    // 置顶 / 取消置顶（最多 3 个，由后端校验）
+    document.querySelectorAll('.btn-pin').forEach(function (btn) {
+        btn.addEventListener('click', async function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const id = btn.getAttribute('data-task-id');
+            btn.disabled = true;
+            try {
+                const r = await fetch('/task/' + id + '/pin', { method: 'POST', headers: { 'Accept': 'application/json' } });
+                const d = await r.json().catch(() => ({}));
+                if (r.ok && d.success) {
+                    location.reload();  // 重新排序，置顶项上浮
+                } else {
+                    alert(d.message || '操作失败');
+                    btn.disabled = false;
+                }
+            } catch (err) {
+                alert('网络错误：' + err.message);
+                btn.disabled = false;
+            }
+        });
+    });
 </script>
 {% endblock %}
 {% endblock %}

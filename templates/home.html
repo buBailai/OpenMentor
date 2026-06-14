@@ -393,16 +393,16 @@
             if (!statsResp.ok) throw new Error('数据接口 HTTP ' + statsResp.status);
             const data = await statsResp.json();
 
-            // 聚合
+            // 聚合：接口直接下发 {省份: 人数}（服务端聚合表模式，恒定 ~35 行，不随打卡量变慢）
             const perProvince = {};
             let total = 0, overseas = 0;
-            for (const sub of (data.submissions || [])) {
-                const p = sub && sub.province;
-                if (!p) continue;
-                total++;
-                if (p === '海外') { overseas++; continue; }
+            for (const [p, n] of Object.entries(data.counts || {})) {
+                const count = parseInt(n, 10) || 0;
+                if (!p || count <= 0) continue;
+                total += count;
+                if (p === '海外') { overseas += count; continue; }
                 const full = SHORT_TO_FULL[p];
-                if (full) perProvince[full] = (perProvince[full] || 0) + 1;
+                if (full) perProvince[full] = (perProvince[full] || 0) + count;
             }
             const regionsHit = Object.keys(perProvince).length + (overseas > 0 ? 1 : 0);
 

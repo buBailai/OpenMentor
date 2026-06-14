@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+
+{% block title %}掌上讲台 App 配对 - {{ get_app_name() }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card text-center">
+            <div class="card-header">
+                <h4 class="mb-0" style="font-weight: 600;"><i class="bi bi-phone"></i> 掌上讲台 App 配对</h4>
+            </div>
+            <div class="card-body" style="padding: 2rem;">
+                <p class="text-muted">用「OpenMentor 掌上讲台」App 扫描下方二维码完成绑定</p>
+                <div id="pair-qrcode" style="display: inline-block; padding: 12px; background: #fff; border: 1px solid #E5E0D8; border-radius: 12px;"></div>
+                <div class="mt-3">
+                    <div class="text-muted small">扫不了码？在 App 里手动输入：</div>
+                    <div style="font-size: 1.5rem; font-weight: 700; letter-spacing: 0.25em; font-family: ui-monospace, Menlo, monospace; margin-top: 0.25rem;">{{ pair_code }}</div>
+                    <div class="text-muted small mt-1">服务器地址：{{ request.host_url.rstrip('/') }}</div>
+                </div>
+                <div class="alert alert-secondary mt-3 mb-0 small" style="border-radius: 8px; background-color: #F7F4EC; border: 1px solid #E5E0D8; text-align: left;">
+                    <i class="bi bi-info-circle"></i> 配对码 10 分钟内有效、只能用一次；刷新本页可生成新码。
+                    一个账号可绑定多台设备（手机 + 平板）。掌上讲台 App 尚未发布时，本页面仅作预留。
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='vendor/qrcodejs/qrcode.min.js') }}"></script>
+<script>
+    new QRCode(document.getElementById('pair-qrcode'), {
+        text: {{ pair_payload | tojson }},
+        width: 220, height: 220,
+        correctLevel: QRCode.CorrectLevel.M
+    });
+</script>
+{% endblock %}

@@ -36,6 +36,12 @@
             <a href="{{ url_for('assistant_audit', assistant_id=assistant.id) }}" class="btn btn-primary btn-sm">
                 <i class="bi bi-eye"></i> 对话审计 ({{ conv_count }} 学生)
             </a>
+            <a href="{{ url_for('assistant_screen', assistant_id=assistant.id) }}" target="_blank" rel="noopener" class="btn btn-outline-primary btn-sm" title="全屏大二维码 + 实时进入统计，专为投影仪设计">
+                <i class="bi bi-cast"></i> 投屏
+            </a>
+            <a href="{{ url_for('assistant_try_chat', assistant_id=assistant.id) }}" target="_blank" rel="noopener" class="btn btn-outline-primary btn-sm" title="以「教师试聊」身份体验学生端，不计入学生数据和审计">
+                <i class="bi bi-chat-heart"></i> 试聊
+            </a>
             <a href="{{ url_for('assistant_edit', assistant_id=assistant.id) }}" class="btn btn-outline-primary btn-sm">
                 <i class="bi bi-pencil"></i> 编辑
             </a>
@@ -335,13 +341,66 @@
             </div>
         </div>
 
-        <!-- 待加功能占位 -->
-        <div class="card mb-4" style="border: 1px dashed #C9C3B8;">
-            <div class="card-body text-center text-muted small" style="padding: 1.25rem;">
-                <i class="bi bi-info-circle"></i>
-                学生对话审计大屏 / 模板导出克隆 / AI 帮我写提示词 等功能将在后续 V1 版本陆续开放
+        <!-- 知识库（RAG） -->
+        <div class="card mb-4">
+            <div class="card-header" style="background-color: #F7F4EC; border-bottom: 1px solid #E5E0D8; font-weight: 600;">
+                <i class="bi bi-journal-bookmark me-1"></i>知识库
+                <span class="text-muted small fw-normal ms-1">学生提问时，AI 会自动引用最相关的资料片段回答</span>
+            </div>
+            <div class="card-body">
+                {% if not kb_enabled %}
+                <div class="alert alert-warning mb-0" style="border-radius: 8px;">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    知识库需要<strong>硅基流动 API Key</strong>做资料向量化（免费，与对话模型无关），
+                    请先到 <a href="{{ url_for('profile') }}">个人设置</a> 配置后再上传资料。
+                </div>
+                {% else %}
+                <form method="POST" action="{{ url_for('assistant_knowledge_upload', assistant_id=assistant.id) }}"
+                      enctype="multipart/form-data" class="d-flex gap-2 align-items-center flex-wrap mb-3"
+                      onsubmit="var b=this.querySelector('button[type=submit]'); b.disabled=true; b.innerHTML='<span class=\'spinner-border spinner-border-sm me-1\'></span>处理中，文件大时需要几十秒…';">
+                    <input type="file" name="kb_files" class="form-control" style="max-width: 420px;" multiple required
+                           accept=".pdf,.doc,.docx,.txt,.md,.markdown,.csv,.tsv,.xlsx,.xls,.pptx,.ppt,.html,.htm">
+                    <button type="submit" class="btn btn-dark" style="border-radius: 6px;">
+                        <i class="bi bi-upload me-1"></i>上传并入库
+                    </button>
+                    <span class="text-muted small">支持 PDF / Word / TXT / Markdown 等，单文件 ≤ 10MB</span>
+                </form>
+
+                {% if kb_docs %}
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead>
+                            <tr class="text-muted small">
+                                <th>资料</th><th style="width:110px;">知识片段</th><th style="width:140px;">上传时间</th><th style="width:80px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for d in kb_docs %}
+                            <tr>
+                                <td>
+                                    <i class="bi bi-file-earmark-text me-1"></i>{{ d.file_name }}
+                                    {% if d.status != 'ready' %}<span class="badge bg-danger ms-1">失败</span>{% endif %}
+                                </td>
+                                <td>{{ d.chunk_count }} 段</td>
+                                <td class="text-muted small">{{ d.created_at.strftime('%m-%d %H:%M') if d.created_at else '—' }}</td>
+                                <td>
+                                    <form method="POST" action="{{ url_for('assistant_knowledge_delete', assistant_id=assistant.id, doc_id=d.id) }}"
+                                          onsubmit="return confirm('删除资料「{{ d.file_name }}」？AI 将不再引用其中内容。');" style="margin:0;">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" style="border-radius: 6px;">删除</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted fst-italic mb-0 small">还没有上传资料。上传教材、教案、课文后，AI 导师回答学生时会优先依据这些资料。</p>
+                {% endif %}
+                {% endif %}
             </div>
         </div>
+
     </div>
 </div>
 

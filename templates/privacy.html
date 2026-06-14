@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+
+{% block title %}隐私政策 - {{ get_app_name() }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0" style="font-weight: 600;">隐私政策</h4>
+            </div>
+            <div class="card-body" style="padding: 1.75rem; line-height: 1.8;">
+                <p class="text-muted small">适用于 OpenMentor 本地部署服务及「OpenMentor 掌上讲台」App · 更新日期：2026-06-12</p>
+
+                <h6 class="fw-bold mt-3">一、数据存储位置</h6>
+                <p>OpenMentor 是<strong>本地化部署</strong>软件：所有教学数据（学生对话、提交数据、附件、花名册、学情报告、知识库资料）均存储在部署者（教师 / 学校）自己的电脑或服务器上，<strong>不会上传到 OpenMentor 开发者的任何服务器</strong>。开发者无法访问您的任何数据。</p>
+
+                <h6 class="fw-bold mt-3">二、第三方 AI 服务</h6>
+                <p>对话、语音转写、图片 / 视频生成等功能会将相应内容发送至<strong>您自行配置的</strong> AI 服务商（如 DeepSeek、火山方舟、阿里云百炼、智谱、硅基流动等）进行处理。API Key 由您自行申请并保存在本地，相关数据处理遵循各服务商的隐私政策。</p>
+
+                <h6 class="fw-bold mt-3">三、掌上讲台 App</h6>
+                <p>App 仅与<strong>您自己部署的 OpenMentor 服务器</strong>在局域网内直连通信；配对令牌保存在您的设备与服务器本地。App 不收集、不上传任何用户数据至开发者；推送通知（如启用）仅经由操作系统官方推送通道（如 Apple APNs）传递事件提醒，不包含学生敏感内容明文。</p>
+
+                <h6 class="fw-bold mt-3">四、匿名统计</h6>
+                <p>首页「老师打卡」为<strong>自愿参与</strong>的匿名地区统计（仅省份名称，无任何个人信息）。除此之外软件不上报任何使用数据。</p>
+
+                <h6 class="fw-bold mt-3">五、学生数据保护建议</h6>
+                <p>请部署者妥善保管服务器设备与管理员账号，定期备份数据；学生对话记录仅用于教学场景，请遵循所在地区关于未成年人数据保护的法律法规。</p>
+
+                <h6 class="fw-bold mt-3">六、联系方式</h6>
+                <p class="mb-0">如对本政策有疑问，请通过项目主页（openmentor.top）或开源仓库 Issue 联系。</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

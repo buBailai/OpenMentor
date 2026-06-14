@@ -257,11 +257,81 @@
                         <div class="form-text text-muted small">支持 PDF / Word / TXT 等，AI 会读取文件文本</div>
                     </div>
 
-                    <div class="mb-4 form-check form-switch">
+                    <div class="mb-3 form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="allow_voice_input" name="allow_voice_input"
+                               {% if not assistant or assistant.allow_voice_input %}checked{% endif %}>
+                        <label class="form-check-label fw-semibold" for="allow_voice_input">允许学生语音输入</label>
+                        <div class="form-text text-muted small">
+                            学生点麦克风按钮讲话，系统自动转成文字发给 AI（打字慢的学生友好）。
+                            需在「个人设置」中配置<strong>硅基流动</strong> API Key（转写用 SenseVoice，免费），与对话所用模型无关。
+                        </div>
+                        <div class="mt-2 ms-1" style="border-left: 3px solid #E5E0D8; padding-left: 0.75rem;">
+                            <div class="fw-semibold small mb-1">语音处理方式</div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="audio_mode" id="audio_mode_transcribe" value="transcribe"
+                                       {% if not assistant or (assistant.audio_mode or 'transcribe') != 'direct' %}checked{% endif %}>
+                                <label class="form-check-label small" for="audio_mode_transcribe">
+                                    <strong>转写成文字</strong>（默认）——音频先转文字再给 AI，全模型兼容、省 token
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="audio_mode" id="audio_mode_direct" value="direct"
+                                       {% if assistant and assistant.audio_mode == 'direct' %}checked{% endif %}>
+                                <label class="form-check-label small" for="audio_mode_direct">
+                                    <strong>原声直达模型</strong>——音频原声发给 AI 听（适合朗读评分、口语练习、声音点评）。
+                                    需对话模型支持音频理解：豆包 <code>doubao-seed-2.0</code> 系列、通义 <code>qwen3-omni</code> 系列；单条音频约 2 分钟以内
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3 form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="allow_tts" name="allow_tts"
+                               {% if assistant and assistant.allow_tts %}checked{% endif %}>
+                        <label class="form-check-label fw-semibold" for="allow_tts">允许学生朗读 AI 回复</label>
+                        <div class="form-text text-muted small">
+                            AI 回复气泡上出现 🔊 按钮，点击把回答读出来（低年级/识字量少的学生友好）。
+                            使用免费的微软在线音色，无需配置任何 Key；不可用时自动降级为设备自带朗读。
+                        </div>
+                    </div>
+
+                    <div class="mb-3 form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="allow_call_teacher" name="allow_call_teacher"
+                               {% if assistant and assistant.allow_call_teacher %}checked{% endif %}>
+                        <label class="form-check-label fw-semibold" for="allow_call_teacher">学生「找老师」按钮</label>
+                        <div class="form-text text-muted small">
+                            学生 AI 答不动 / 卡住时可点一下求助，老师在「掌上讲台」App 收到震动提醒（每个学生 1 分钟限点 1 次）。
+                            App 未发布前事件会先记录在服务器，不影响使用。默认关闭。
+                        </div>
+                    </div>
+
+                    <div class="mb-3 form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="share_mode" name="share_mode" value="group"
+                               {% if assistant and assistant.share_mode == 'group' %}checked{% endif %}>
+                        <label class="form-check-label fw-semibold" for="share_mode">小组共享会话模式</label>
+                        <div class="form-text text-muted small">
+                            开启后学生填写「班级 + 姓名 + 小组名称」进入：<strong>同班级同组名的学生共用一个会话</strong>（可多设备）。
+                            组内发言分「发给小组」（只讨论，不调 AI、不耗额度）和「问 AI 导师」（AI 带着小组讨论上下文回答）两种。
+                            每条消息自动标注发言学生姓名；每日额度按<strong>小组</strong>计算。
+                        </div>
+                    </div>
+
+                    <div class="mb-3 form-check form-switch">
                         <input class="form-check-input" type="checkbox" id="allow_image_generation" name="allow_image_generation"
                                {% if assistant and assistant.allow_image_generation %}checked{% endif %}>
                         <label class="form-check-label fw-semibold" for="allow_image_generation">允许 AI 生成图片</label>
                         <div class="form-text text-muted small">需所选模型支持文生图</div>
+                    </div>
+
+                    <div class="mb-4 form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="allow_video_generation" name="allow_video_generation"
+                               {% if assistant and assistant.allow_video_generation %}checked{% endif %}>
+                        <label class="form-check-label fw-semibold" for="allow_video_generation">允许 AI 生成视频</label>
+                        <div class="form-text text-muted small">
+                            学生可选「文生视频」或「图生视频」（上传一张图让它动起来）。
+                            目前支持<strong>豆包</strong>：需在「个人设置」豆包卡片填写视频生成模型（如 <code>doubao-seedance-1-5-pro-251215</code>）。
+                            默认生成 5 秒 720p，按时长计费，请留意火山方舟账单。
+                        </div>
                     </div>
 
                     <!-- 安全策略 -->

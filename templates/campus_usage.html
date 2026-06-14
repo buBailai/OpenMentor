@@ -1,0 +1,469 @@
+{% extends 'base.html' %}
+
+{% block title %}使用大屏 - {{ get_app_name() }}{% endblock %}
+
+{% block styles %}
+{{ super() }}
+<style>
+    .usage-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 1rem;
+        margin-bottom: 1.25rem;
+    }
+
+    .usage-filter {
+        background: var(--om-cream-soft);
+        border: 1px solid var(--om-border);
+        border-radius: 8px;
+        padding: 0.85rem;
+    }
+
+    .usage-filter .form-select {
+        min-width: 9.5rem;
+    }
+
+    .usage-metric-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(14.5rem, 1fr));
+        gap: 0.85rem;
+        margin-bottom: 1rem;
+    }
+
+    .usage-metric {
+        border: 1px solid var(--om-border);
+        border-radius: 8px;
+        background: var(--om-paper);
+        padding: 1rem;
+        min-height: 8.2rem;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .usage-metric::after {
+        content: "";
+        position: absolute;
+        inset: auto 0 0 0;
+        height: 4px;
+        background: var(--metric-color, var(--om-ink));
+    }
+
+    .usage-metric-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .usage-metric-icon {
+        width: 2.25rem;
+        height: 2.25rem;
+        border-radius: 8px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--metric-color, var(--om-ink));
+        background: color-mix(in srgb, var(--metric-color, var(--om-ink)) 12%, transparent);
+        flex: 0 0 auto;
+    }
+
+    .usage-metric-label {
+        color: var(--om-muted);
+        font-size: 0.86rem;
+        font-weight: 600;
+    }
+
+    .usage-metric-value {
+        font-family: var(--om-font-serif);
+        font-size: 2.2rem;
+        line-height: 1.05;
+        color: var(--om-ink);
+        margin-top: 0.65rem;
+    }
+
+    .usage-metric-sub {
+        color: var(--om-muted);
+        font-size: 0.82rem;
+        margin-top: 0.55rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .tone-ink { --metric-color: #141413; }
+    .tone-green { --metric-color: #2F7D4F; }
+    .tone-blue { --metric-color: #356AA0; }
+    .tone-amber { --metric-color: #B27718; }
+    .tone-red { --metric-color: #B94B45; }
+    .tone-violet { --metric-color: #7B5AA6; }
+
+    .usage-mini-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .usage-mini {
+        border: 1px solid var(--om-border);
+        border-radius: 8px;
+        background: var(--om-cream-soft);
+        padding: 0.7rem;
+        min-height: 4.9rem;
+    }
+
+    .usage-mini-label {
+        color: var(--om-muted);
+        font-size: 0.76rem;
+        white-space: nowrap;
+    }
+
+    .usage-mini-value {
+        color: var(--om-ink);
+        font-size: 1.32rem;
+        font-weight: 700;
+        margin-top: 0.35rem;
+    }
+
+    .usage-panel {
+        border: 1px solid var(--om-border);
+        border-radius: 8px;
+        background: var(--om-paper);
+        overflow: hidden;
+        height: 100%;
+    }
+
+    .usage-panel-head {
+        padding: 0.85rem 1rem;
+        border-bottom: 1px solid var(--om-border);
+        background: var(--om-cream-soft);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+    }
+
+    .usage-panel-title {
+        font-weight: 700;
+        color: var(--om-ink);
+        margin: 0;
+    }
+
+    .usage-panel-body {
+        padding: 1rem;
+    }
+
+    .usage-trend {
+        display: flex;
+        align-items: end;
+        gap: 0.32rem;
+        min-height: 13rem;
+        overflow-x: auto;
+        padding-bottom: 0.35rem;
+    }
+
+    .usage-bar-wrap {
+        width: 1.55rem;
+        min-width: 1.55rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.4rem;
+    }
+
+    .usage-bar-stack {
+        height: 9.5rem;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        border-radius: 6px;
+        overflow: hidden;
+        background: var(--om-cream-soft);
+        border: 1px solid var(--om-border);
+    }
+
+    .usage-bar-msg {
+        background: #356AA0;
+        min-height: 0;
+    }
+
+    .usage-bar-sub {
+        background: #B27718;
+        min-height: 0;
+    }
+
+    .usage-bar-label {
+        font-size: 0.68rem;
+        color: var(--om-muted);
+        writing-mode: vertical-rl;
+        line-height: 1;
+        height: 2.8rem;
+    }
+
+    .usage-legend {
+        display: flex;
+        gap: 0.85rem;
+        color: var(--om-muted);
+        font-size: 0.78rem;
+        white-space: nowrap;
+    }
+
+    .usage-dot {
+        display: inline-block;
+        width: 0.55rem;
+        height: 0.55rem;
+        border-radius: 999px;
+        margin-right: 0.28rem;
+    }
+
+    .usage-progress-row {
+        display: grid;
+        grid-template-columns: 4rem 1fr 2.5rem;
+        align-items: center;
+        gap: 0.7rem;
+        margin-bottom: 0.72rem;
+        color: var(--om-muted);
+        font-size: 0.86rem;
+    }
+
+    .usage-progress {
+        height: 0.52rem;
+        border-radius: 999px;
+        background: var(--om-cream-soft);
+        overflow: hidden;
+        border: 1px solid var(--om-border);
+    }
+
+    .usage-progress span {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: #2F7D4F;
+    }
+
+    .usage-table {
+        margin: 0;
+    }
+
+    .usage-table th,
+    .usage-table td {
+        white-space: nowrap;
+        vertical-align: middle;
+    }
+
+    .usage-recent-list {
+        display: grid;
+        gap: 0.65rem;
+    }
+
+    .usage-recent-item {
+        border: 1px solid var(--om-border);
+        border-radius: 8px;
+        padding: 0.75rem;
+        background: var(--om-cream-soft);
+    }
+
+    .usage-recent-title {
+        color: var(--om-ink);
+        font-weight: 700;
+        margin-bottom: 0.25rem;
+    }
+
+    @media (max-width: 992px) {
+        .usage-header {
+            flex-direction: column;
+        }
+
+        .usage-metric-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .usage-mini-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+    }
+
+    @media (max-width: 576px) {
+        .usage-metric-grid,
+        .usage-mini-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .usage-filter .form-select {
+            min-width: 100%;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="usage-header">
+    <div>
+        <h1 class="page-title mb-1">使用大屏</h1>
+        <p class="page-subtitle mb-0">校园版全校 OpenMentor 使用情况</p>
+    </div>
+    <form method="GET" action="{{ url_for('campus_usage_dashboard') }}" class="usage-filter d-flex flex-wrap gap-2 align-items-end">
+        <div>
+            <label for="period" class="form-label small text-muted mb-1">时间范围</label>
+            <select id="period" name="period" class="form-select" onchange="this.form.submit()">
+                {% for value, label in period_options %}
+                <option value="{{ value }}" {% if value == period %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label for="teacher_id" class="form-label small text-muted mb-1">教师账号</label>
+            <select id="teacher_id" name="teacher_id" class="form-select" onchange="this.form.submit()">
+                <option value="0" {% if not teacher_id %}selected{% endif %}>全部教师</option>
+                {% for teacher in teachers %}
+                <option value="{{ teacher.id }}" {% if teacher.id == teacher_id %}selected{% endif %}>{{ teacher.display_name or teacher.username }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </form>
+</div>
+
+<div class="usage-metric-grid">
+    {% for metric in primary_metrics %}
+    <div class="usage-metric tone-{{ metric.tone }}">
+        <div class="usage-metric-top">
+            <div class="usage-metric-label">{{ metric.label }}</div>
+            <div class="usage-metric-icon"><i class="bi {{ metric.icon }}"></i></div>
+        </div>
+        <div class="usage-metric-value">{{ metric.value }}</div>
+        <div class="usage-metric-sub" title="{{ metric.sub }}">{{ metric.sub }}</div>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="usage-mini-grid">
+    {% for item in extra_metrics %}
+    <div class="usage-mini">
+        <div class="usage-mini-label">{{ item.label }}</div>
+        <div class="usage-mini-value">{{ item.value }}</div>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-lg-8">
+        <div class="usage-panel">
+            <div class="usage-panel-head">
+                <h5 class="usage-panel-title">使用趋势</h5>
+                <div class="usage-legend">
+                    <span><i class="usage-dot" style="background:#356AA0;"></i>学生消息</span>
+                    <span><i class="usage-dot" style="background:#B27718;"></i>数据提交</span>
+                </div>
+            </div>
+            <div class="usage-panel-body">
+                <div class="usage-trend">
+                    {% for item in trend_items %}
+                    {% set total = item.messages + item.submissions %}
+                    {% set msg_h = (item.messages / trend_max * 100) if trend_max else 0 %}
+                    {% set sub_h = (item.submissions / trend_max * 100) if trend_max else 0 %}
+                    <div class="usage-bar-wrap" title="{{ item.label }}：学生消息 {{ item.messages }}，数据提交 {{ item.submissions }}">
+                        <div class="usage-bar-stack">
+                            <div class="usage-bar-msg" style="height: {{ msg_h }}%;"></div>
+                            <div class="usage-bar-sub" style="height: {{ sub_h }}%;"></div>
+                        </div>
+                        <div class="usage-bar-label">{{ item.label }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="usage-panel">
+            <div class="usage-panel-head">
+                <h5 class="usage-panel-title">附件类型</h5>
+            </div>
+            <div class="usage-panel-body">
+                {% set max_attachment = attachment_type_items | map(attribute='value') | max %}
+                {% for item in attachment_type_items %}
+                {% set pct = (item.value / max_attachment * 100) if max_attachment else 0 %}
+                <div class="usage-progress-row">
+                    <div>{{ item.label }}</div>
+                    <div class="usage-progress"><span style="width: {{ pct }}%;"></span></div>
+                    <div class="text-end">{{ item.value }}</div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-8">
+        <div class="usage-panel">
+            <div class="usage-panel-head">
+                <h5 class="usage-panel-title">教师使用排行</h5>
+                <span class="text-muted small">按对话与提交综合排序</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover usage-table">
+                    <thead>
+                        <tr>
+                            <th>教师</th>
+                            <th>状态</th>
+                            <th>使用</th>
+                            <th>AI导师</th>
+                            <th>数据任务</th>
+                            <th>提交</th>
+                            <th>附件</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in teacher_rows %}
+                        <tr>
+                            <td>
+                                <div style="font-weight:700;">{{ row.name }}</div>
+                                <div class="text-muted small">{{ row.username }}</div>
+                            </td>
+                            <td>
+                                {% if row.is_active %}
+                                <span class="badge bg-success">启用</span>
+                                {% else %}
+                                <span class="badge bg-warning text-dark">禁用</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ row.usage }}</td>
+                            <td>{{ row.assistants }}</td>
+                            <td>{{ row.data_tasks }}</td>
+                            <td>{{ row.submissions }}</td>
+                            <td>{{ row.attachments }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="7" class="text-center text-muted py-4">暂无数据</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="usage-panel">
+            <div class="usage-panel-head">
+                <h5 class="usage-panel-title">最近对话</h5>
+            </div>
+            <div class="usage-panel-body">
+                <div class="usage-recent-list">
+                    {% for item in recent_items %}
+                    <div class="usage-recent-item">
+                        <div class="usage-recent-title">{{ item.assistant }}</div>
+                        <div class="text-muted small">{{ item.teacher }} · {{ item.student }}</div>
+                        <div class="text-muted small mt-1">{{ item.time }}</div>
+                    </div>
+                    {% else %}
+                    <div class="text-center text-muted py-4">暂无对话</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

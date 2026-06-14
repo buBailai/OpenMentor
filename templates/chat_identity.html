@@ -175,6 +175,18 @@
                         <option value="">— 请先选择班级 —</option>
                     </select>
                 </div>
+                {% if assistant.share_mode == 'group' %}
+                <div class="mb-3">
+                    <label for="group_name" class="form-label">小组名称</label>
+                    <input type="text" class="form-control" name="group_name" id="group_name"
+                           required maxlength="50"
+                           placeholder="例如：第3组"
+                           autocomplete="off">
+                    <div style="font-size: 0.78rem; color: var(--om-subtle); margin-top: 0.3rem;">
+                        <i class="bi bi-people"></i> 小组模式：同班级填同一个组名的同学，会进入同一个共享对话
+                    </div>
+                </div>
+                {% endif %}
                 <input type="hidden" name="device_uuid" class="om-device-uuid">
                 <button type="submit" class="btn btn-primary w-100 mt-3">开始对话</button>
             </form>
@@ -245,6 +257,18 @@
                            autocomplete="off">
                 </div>
                 <input type="hidden" name="student_class" id="student_class">
+                {% if assistant.share_mode == 'group' %}
+                <div class="mb-3">
+                    <label for="group_name" class="form-label">小组名称</label>
+                    <input type="text" class="form-control" name="group_name" id="group_name"
+                           required maxlength="50"
+                           placeholder="例如：第3组"
+                           autocomplete="off">
+                    <div style="font-size: 0.78rem; color: var(--om-subtle); margin-top: 0.3rem;">
+                        <i class="bi bi-people"></i> 小组模式：同班级填同一个组名的同学，会进入同一个共享对话
+                    </div>
+                </div>
+                {% endif %}
                 <input type="hidden" name="device_uuid" class="om-device-uuid">
                 <button type="submit" class="btn btn-primary w-100 mt-3">开始对话</button>
             </form>
@@ -307,6 +331,18 @@
                            placeholder="例如：张三"
                            autocomplete="off">
                 </div>
+                {% if assistant.share_mode == 'group' %}
+                <div class="mb-3">
+                    <label for="group_name" class="form-label">小组名称</label>
+                    <input type="text" class="form-control" name="group_name" id="group_name"
+                           required maxlength="50"
+                           placeholder="例如：第3组"
+                           autocomplete="off">
+                    <div style="font-size: 0.78rem; color: var(--om-subtle); margin-top: 0.3rem;">
+                        <i class="bi bi-people"></i> 小组模式：同班级填同一个组名的同学，会进入同一个共享对话
+                    </div>
+                </div>
+                {% endif %}
                 <input type="hidden" name="device_uuid" class="om-device-uuid">
                 <button type="submit" class="btn btn-primary w-100 mt-3">开始对话</button>
             </form>

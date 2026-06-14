@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ assistant.title }} · 课堂投屏</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-icons/bootstrap-icons.min.css') }}">
+    <style>
+        :root {
+            --om-cream: #FAF8F2;
+            --om-paper: #FFFFFF;
+            --om-ink: #141413;
+            --om-muted: #6B6760;
+            --om-subtle: #94918B;
+            --om-border: #E5E0D8;
+            --om-clay: #D97757;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+            background: var(--om-cream);
+            color: var(--om-ink);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            min-height: 100vh; padding: 3vh 4vw;
+            text-align: center;
+        }
+        .title {
+            display: flex; align-items: center; gap: 1.2rem; justify-content: center;
+            margin-bottom: 1vh;
+        }
+        .title img { width: clamp(48px, 7vh, 80px); height: clamp(48px, 7vh, 80px); border-radius: 50%; border: 2px solid var(--om-border); object-fit: cover; }
+        .title h1 { font-size: clamp(1.8rem, 5.5vh, 4rem); font-weight: 800; letter-spacing: 0.02em; }
+        .subtitle { color: var(--om-muted); font-size: clamp(1rem, 2.6vh, 1.6rem); margin-bottom: 3vh; }
+        .qr-card {
+            background: var(--om-paper);
+            border: 1px solid var(--om-border);
+            border-radius: 24px;
+            padding: clamp(16px, 3vh, 36px);
+            box-shadow: 0 14px 50px rgba(20, 20, 19, 0.10);
+        }
+        #qrcode { line-height: 0; }
+        #qrcode img, #qrcode canvas { width: min(46vh, 78vw) !important; height: min(46vh, 78vw) !important; }
+        .url-line {
+            margin-top: 2.2vh;
+            font-size: clamp(1rem, 2.8vh, 1.9rem);
+            font-weight: 600;
+            color: var(--om-ink);
+            word-break: break-all;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            background: var(--om-paper);
+            border: 1px solid var(--om-border);
+            border-radius: 12px;
+            padding: 0.5em 1em;
+        }
+        .stats {
+            margin-top: 2.6vh;
+            display: flex; gap: clamp(1.2rem, 4vw, 3.5rem); justify-content: center; align-items: baseline;
+            font-size: clamp(1rem, 2.8vh, 1.8rem);
+            color: var(--om-muted);
+        }
+        .stats strong {
+            font-size: clamp(1.6rem, 5vh, 3.2rem);
+            color: var(--om-clay);
+            font-variant-numeric: tabular-nums;
+            transition: transform 0.25s ease;
+            display: inline-block;
+        }
+        .stats strong.bump { transform: scale(1.25); }
+        .hint { position: fixed; bottom: 14px; left: 0; right: 0; color: var(--om-subtle); font-size: 0.85rem; }
+        .toolbar {
+            position: fixed; top: 14px; right: 16px; display: flex; gap: 0.5rem;
+        }
+        .toolbar button, .toolbar a {
+            border: 1px solid var(--om-border); background: var(--om-paper); color: var(--om-muted);
+            border-radius: 999px; padding: 0.4rem 0.9rem; cursor: pointer; font-size: 0.9rem; text-decoration: none;
+        }
+        .toolbar button:hover, .toolbar a:hover { color: var(--om-ink); border-color: var(--om-ink); }
+        @media (max-height: 500px) {
+            .subtitle, .hint { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <button type="button" id="btn-fullscreen" title="全屏（投影时建议开启）"><i class="bi bi-arrows-fullscreen"></i> 全屏</button>
+        <a href="{{ url_for('assistant_detail', assistant_id=assistant.id) }}" title="返回导师详情"><i class="bi bi-x-lg"></i> 退出</a>
+    </div>
+
+    <div class="title">
+        {% if assistant.avatar_path %}<img src="/{{ assistant.avatar_path }}" alt="">{% endif %}
+        <h1>{{ assistant.title }}</h1>
+    </div>
+    <div class="subtitle">用手机 / 平板扫码，开始和 AI 导师对话</div>
+
+    <div class="qr-card"><div id="qrcode"></div></div>
+
+    <div class="url-line">{{ student_url }}</div>
+
+    <div class="stats">
+        <span>今日已进入 <strong id="stat-joined">0</strong> {{ '组' if is_group else '人' }}</span>
+        <span>今日提问 <strong id="stat-questions">0</strong> 条</span>
+    </div>
+
+    <div class="hint">OpenMentor 课堂投屏 · 数据每 5 秒自动刷新 · 按 F11 或点右上角「全屏」铺满投影</div>
+
+    <script src="{{ url_for('static', filename='vendor/qrcodejs/qrcode.min.js') }}"></script>
+    <script>
+    (function () {
+        new QRCode(document.getElementById('qrcode'), {
+            text: {{ student_url | tojson }},
+            width: 760, height: 760,
+            correctLevel: QRCode.CorrectLevel.M
+        });
+
+        document.getElementById('btn-fullscreen').addEventListener('click', function () {
+            if (document.fullscreenElement) { document.exitFullscreen(); }
+            else { document.documentElement.requestFullscreen().catch(function () {}); }
+        });
+
+        var joinedEl = document.getElementById('stat-joined');
+        var questionsEl = document.getElementById('stat-questions');
+        function bump(el) {
+            el.classList.add('bump');
+            setTimeout(function () { el.classList.remove('bump'); }, 300);
+        }
+        function refresh() {
+            fetch('/api/assistant/{{ assistant.id }}/screen_stats')
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (typeof d.joined === 'number' && String(d.joined) !== joinedEl.textContent) {
+                        joinedEl.textContent = d.joined; bump(joinedEl);
+                    }
+                    if (typeof d.questions === 'number' && String(d.questions) !== questionsEl.textContent) {
+                        questionsEl.textContent = d.questions; bump(questionsEl);
+                    }
+                })
+                .catch(function () {});
+        }
+        refresh();
+        setInterval(refresh, 5000);
+    })();
+    </script>
+</body>
+</html>

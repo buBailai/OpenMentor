@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>语音输入 · OpenMentor</title>
+<!--
+  OpenMentor 录音桥（纯静态，无任何依赖）
+
+  用途：聊天页跑在局域网 HTTP 上时浏览器禁用麦克风（需要安全上下文）。
+  本页部署在 HTTPS（或 localhost）上，由聊天页弹窗打开，在安全上下文里录音，
+  再通过 postMessage 把 WAV 音频 Blob 传回聊天页（postMessage 不受混合内容限制）。
+
+  协议：
+  - 聊天页打开 本页URL#om=<encodeURIComponent(返回origin)>|<nonce>|auto
+    （第三段 auto 可选：带上则页面加载后自动开始录音，减少跳跃感）
+  - 本页加载完成 → opener.postMessage({type:'om-voice-ready', nonce}, 返回origin)
+  - 录音完成     → opener.postMessage({type:'om-voice-audio', nonce, blob, duration}, 返回origin)
+  - 用户取消     → opener.postMessage({type:'om-voice-cancel', nonce}, 返回origin)
+-->
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #FAF8F2; color: #141413; min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 1.5rem; text-align: center;
+  }
+  h1 { font-size: 1.15rem; font-weight: 700; margin-bottom: 0.4rem; }
+  .sub { color: #6B6760; font-size: 0.9rem; margin-bottom: 2rem; min-height: 1.3em; }
+  .mic-btn {
+    width: 110px; height: 110px; border-radius: 50%; border: none; cursor: pointer;
+    background: #141413; color: #fff; font-size: 2.6rem;
+    display: flex; align-items: center; justify-content: center;
+    transition: transform 0.15s, background 0.2s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mic-btn:active { transform: scale(0.94); }
+  .mic-btn.recording { background: #B8463E; animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(184, 70, 62, 0.45); }
+    50% { box-shadow: 0 0 0 22px rgba(184, 70, 62, 0); }
+  }
+  .timer { font-size: 1.6rem; font-variant-numeric: tabular-nums; font-weight: 700; margin: 1.25rem 0 0.25rem; min-height: 2rem; }
+  .hint { color: #94918B; font-size: 0.85rem; margin-top: 0.75rem; }
+  .error {
+    display: none; margin-top: 1.25rem; padding: 0.625rem 0.875rem; max-width: 320px;
+    background: #F2DCD9; color: #7A2A26; border-radius: 8px; font-size: 0.85rem; line-height: 1.5;
+  }
+  .ok { color: #3D6B4F; font-weight: 600; }
+  .cancel-link { margin-top: 1.75rem; background: none; border: none; color: #94918B; font-size: 0.85rem; cursor: pointer; text-decoration: underline; }
+</style>
+</head>
+<body>
+  <h1>🎤 语音输入</h1>
+  <div class="sub" id="sub">点下面的按钮开始讲话</div>
+  <button class="mic-btn" id="mic" type="button" aria-label="录音">🎙️</button>
+  <div class="timer" id="timer"></div>
+  <div class="hint" id="hint">最长 60 秒 · 讲完再点一下就会自动发送</div>
+  <div class="error" id="error"></div>
+  <button class="cancel-link" id="cancel" type="button">取消，返回对话</button>
+
+<script>
+(function () {
+  var MAX_SECONDS = 60;
+  var micBtn = document.getElementById('mic');
+  var subEl = document.getElementById('sub');
+  var timerEl = document.getElementById('timer');
+  var hintEl = document.getElementById('hint');
+  var errEl = document.getElementById('error');
+  var cancelBtn = document.getElementById('cancel');
+
+  // 解析 #om=<origin>|<nonce>|auto
+  var returnOrigin = null, nonce = null, autoStart = false;
+  var m = /[#&]om=([^&]+)/.exec(location.hash || '');
+  if (m) {
+    var parts = decodeURIComponent(m[1]).split('|');
+    returnOrigin = parts[0] || null;
+    nonce = parts[1] || null;
+    autoStart = parts[2] === 'auto';
+  }
+
+  function showError(msg) {
+    errEl.textContent = msg;
+    errEl.style.display = 'block';
+  }
+
+  function post(payload) {
+    if (!window.opener || !returnOrigin) return false;
+    try {
+      payload.nonce = nonce;
+      window.opener.postMessage(payload, returnOrigin);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  if (!window.opener || !returnOrigin) {
+    micBtn.disabled = true;
+    micBtn.style.opacity = '0.4';
+    showError('请从 AI 导师对话页里点麦克风按钮打开本页（不能直接访问）。');
+  } else {
+    post({ type: 'om-voice-ready' });
+  }
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+    micBtn.disabled = true;
+    micBtn.style.opacity = '0.4';
+    showError('这个浏览器不支持录音，请换 Chrome / Edge / Safari 试试。');
+  }
+
+  // ---- 录音 ----
+  var mediaStream = null, recorder = null, chunks = [], startTs = 0, tickTimer = null, stopping = false;
+
+  function fmt(sec) {
+    var s = Math.floor(sec % 60), mn = Math.floor(sec / 60);
+    return mn + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  function cleanupStream() {
+    if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
+    if (mediaStream) {
+      mediaStream.getTracks().forEach(function (t) { t.stop(); });
+      mediaStream = null;
+    }
+  }
+
+  async function startRecording() {
+    errEl.style.display = 'none';
+    try {
+      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      showError('没拿到麦克风权限。请在浏览器弹出的提示里点「允许」，或到浏览器设置里打开麦克风权限后重试。');
+      return;
+    }
+    chunks = [];
+    stopping = false;
+    try {
+      recorder = new MediaRecorder(mediaStream);
+    } catch (e) {
+      cleanupStream();
+      showError('录音器启动失败：' + e.message);
+      return;
+    }
+    recorder.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+    recorder.onstop = onRecorderStop;
+    recorder.start(250);
+    startTs = Date.now();
+    micBtn.classList.add('recording');
+    micBtn.textContent = '⏹';
+    subEl.textContent = '正在录音，讲完点一下停止';
+    hintEl.textContent = '最长 60 秒，到时自动停止';
+    timerEl.textContent = '0:00';
+    tickTimer = setInterval(function () {
+      var sec = (Date.now() - startTs) / 1000;
+      timerEl.textContent = fmt(sec);
+      if (sec >= MAX_SECONDS) stopRecording();
+    }, 250);
+  }
+
+  function stopRecording() {
+    if (!recorder || stopping) return;
+    stopping = true;
+    micBtn.classList.remove('recording');
+    micBtn.disabled = true;
+    subEl.textContent = '正在处理录音…';
+    try { recorder.stop(); } catch (e) { onRecorderStop(); }
+  }
+
+  async function onRecorderStop() {
+    cleanupStream();
+    var duration = (Date.now() - startTs) / 1000;
+    var raw = new Blob(chunks, { type: (recorder && recorder.mimeType) || 'audio/webm' });
+    if (raw.size < 1024 || duration < 0.5) {
+      micBtn.disabled = false;
+      micBtn.textContent = '🎙️';
+      subEl.textContent = '录音太短了，请重新点击开始';
+      timerEl.textContent = '';
+      return;
+    }
+    var wavBlob;
+    try {
+      wavBlob = await toWav16kMono(raw);
+    } catch (e) {
+      // 转码失败就把原始格式发回去，由服务器端 ASR 兼容
+      wavBlob = raw;
+    }
+    var sent = post({ type: 'om-voice-audio', blob: wavBlob, duration: Math.round(duration), mimeType: wavBlob.type || 'audio/wav' });
+    if (sent) {
+      subEl.innerHTML = '<span class="ok">✅ 已发送回对话页！本窗口即将关闭…</span>';
+      timerEl.textContent = '';
+      setTimeout(function () { window.close(); }, 900);
+    } else {
+      showError('没能把录音传回对话页，请关闭本窗口后重试。');
+    }
+  }
+
+  // MediaRecorder 输出（webm/opus 或 mp4/aac）→ 16kHz 单声道 16-bit PCM WAV
+  // 统一成 WAV 是为了服务器端 ASR（SenseVoice）格式兼容最大化
+  async function toWav16kMono(blob) {
+    var arrayBuf = await blob.arrayBuffer();
+    var AC = window.AudioContext || window.webkitAudioContext;
+    var ctx = new AC();
+    var decoded;
+    try {
+      decoded = await ctx.decodeAudioData(arrayBuf);
+    } finally {
+      if (ctx.close) ctx.close();
+    }
+    var targetRate = 16000;
+    var frames = Math.ceil(decoded.duration * targetRate);
+    var OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    var off = new OAC(1, frames, targetRate);
+    var src = off.createBufferSource();
+    src.buffer = decoded;
+    src.connect(off.destination);
+    src.start(0);
+    var rendered = await off.startRendering();
+    var pcm = rendered.getChannelData(0);
+    return new Blob([encodeWav(pcm, targetRate)], { type: 'audio/wav' });
+  }
+
+  function encodeWav(samples, sampleRate) {
+    var buf = new ArrayBuffer(44 + samples.length * 2);
+    var view = new DataView(buf);
+    function wstr(off, s) { for (var i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); }
+    wstr(0, 'RIFF');
+    view.setUint32(4, 36 + samples.length * 2, true);
+    wstr(8, 'WAVE');
+    wstr(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);          // PCM
+    view.setUint16(22, 1, true);          // mono
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    wstr(36, 'data');
+    view.setUint32(40, samples.length * 2, true);
+    var o = 44;
+    for (var i = 0; i < samples.length; i++, o += 2) {
+      var s = Math.max(-1, Math.min(1, samples[i]));
+      view.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    }
+    return buf;
+  }
+
+  micBtn.addEventListener('click', function () {
+    if (micBtn.classList.contains('recording')) stopRecording();
+    else startRecording();
+  });
+
+  // 自动开始录音（聊天页带 auto 标记打开时）：打开即录，少点一次，减少跳跃感
+  // 首次使用会先弹麦克风授权，授权后才真正开始；失败则回落到手动点按钮
+  if (autoStart && window.opener && returnOrigin &&
+      navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder) {
+    startRecording();
+  }
+
+  cancelBtn.addEventListener('click', function () {
+    cleanupStream();
+    if (recorder && recorder.state === 'recording') { try { recorder.onstop = null; recorder.stop(); } catch (e) {} }
+    post({ type: 'om-voice-cancel' });
+    window.close();
+  });
+})();
+</script>
+</body>
+</html>

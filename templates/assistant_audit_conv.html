@@ -125,11 +125,13 @@
         const role = m.role || 'user';
         const avatar = role === 'user' ? '我' : (role === 'system' ? '!' : 'AI');
         let attachments = '';
-        if ((m.image_urls && m.image_urls.length) || (m.files && m.files.length) || m.generated_image_url) {
+        if ((m.image_urls && m.image_urls.length) || (m.files && m.files.length) || (m.audio_urls && m.audio_urls.length) || m.generated_image_url || m.generated_video_url) {
+            const audios = (m.audio_urls || []).map(u => `<audio controls preload="metadata" src="${u}" style="max-width:240px;height:34px;" title="学生的语音"></audio>`).join('');
             const imgs = (m.image_urls || []).map(u => `<img src="${u}" loading="lazy" onclick="window.open('${u}','_blank')">`).join('');
             const files = (m.files || []).map(f => `<a href="${f.url}" target="_blank" class="audit-file-link"><i class="bi bi-paperclip"></i> ${escapeHtml(f.name)}</a>`).join('');
             const genImg = m.generated_image_url ? `<img src="${m.generated_image_url}" loading="lazy" onclick="window.open('${m.generated_image_url}','_blank')" title="AI 生成">` : '';
-            attachments = `<div class="audit-attachments">${imgs}${genImg}${files}</div>`;
+            const genVideo = m.generated_video_url ? `<video controls preload="metadata" src="${m.generated_video_url}" style="max-width:280px;border-radius:6px;" title="AI 生成的视频"></video>` : '';
+            attachments = `<div class="audit-attachments">${audios}${imgs}${genImg}${genVideo}${files}</div>`;
         }
         const kwBadge = m.triggered_keyword ? `<div class="kw-badge"><i class="bi bi-exclamation-triangle"></i> 命中 ${escapeHtml(m.triggered_keyword)}</div>` : '';
         const content = `<pre>${escapeHtml(m.content || '')}</pre>`;

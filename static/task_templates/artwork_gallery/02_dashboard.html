@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>作品采集 · 数据大屏 · OpenMentor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Serif+SC:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --om-cream:        #F0EEE6;
+      --om-cream-soft:   #F7F4EC;
+      --om-cream-warm:   #E8E4D8;
+      --om-paper:        #FFFFFF;
+      --om-ink:          #141413;
+      --om-ink-soft:     #2D2A24;
+      --om-muted:        #6B6760;
+      --om-subtle:       #94918B;
+      --om-border:       #E5E0D8;
+      --om-border-strong:#C9C3B8;
+      --om-divider:      #EDE8DD;
+      --om-clay:         #D97757;
+      --om-clay-hover:   #C56548;
+      --om-clay-soft:    #F5E6DD;
+      --om-clay-deep:    #A04D38;
+      --om-success:      #5B7553;
+      --om-success-soft: #E5EBDF;
+      --om-danger:       #C0584A;
+      --om-info:         #3370FF;
+      --om-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', sans-serif;
+      --om-font-serif: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', 'STSong', serif;
+      --om-radius:    10px;
+      --om-radius-lg: 14px;
+      --om-radius-xl: 20px;
+      --om-shadow-sm: 0 1px 3px rgba(20, 17, 12, 0.05);
+      --om-shadow-md: 0 4px 16px rgba(20, 17, 12, 0.06);
+      --om-shadow-lg: 0 12px 40px rgba(20, 17, 12, 0.10);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--om-cream-soft);
+      background-image: radial-gradient(circle at 12% 0%, rgba(217, 119, 87, 0.06), transparent 42%),
+                        radial-gradient(circle at 100% 8%, rgba(217, 119, 87, 0.05), transparent 38%);
+      font-family: var(--om-font-sans);
+      color: var(--om-ink);
+      line-height: 1.6;
+    }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 32px 28px 48px; }
+
+    /* ---------- header ---------- */
+    header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .brand-mark {
+      width: 28px; height: 28px; border-radius: 8px;
+      background: var(--om-clay); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--om-font-serif); font-weight: 600; font-size: 16px; line-height: 1;
+    }
+    .brand-name { font-size: 14px; font-weight: 600; color: var(--om-ink-soft); }
+    h1 {
+      margin: 0;
+      font-family: var(--om-font-serif);
+      font-size: 30px; font-weight: 600; letter-spacing: .5px;
+    }
+    .task-meta { margin-top: 6px; color: var(--om-muted); font-size: 14px; }
+    .task-meta b { color: var(--om-clay-deep); font-weight: 600; }
+    .head-actions { display: flex; align-items: center; gap: 12px; }
+    .refresh-btn {
+      border: 1px solid var(--om-border-strong);
+      background: var(--om-paper);
+      color: var(--om-ink-soft);
+      font-family: var(--om-font-sans); font-size: 14px; font-weight: 500;
+      padding: 9px 16px; border-radius: var(--om-radius);
+      cursor: pointer; box-shadow: var(--om-shadow-sm);
+      transition: border-color .18s, color .18s, background .18s;
+      display: inline-flex; align-items: center; gap: 7px;
+    }
+    .refresh-btn:hover { border-color: var(--om-clay); color: var(--om-clay-deep); background: var(--om-clay-soft); }
+    .refresh-btn:disabled { opacity: .55; cursor: not-allowed; }
+    .refresh-btn svg { width: 15px; height: 15px; }
+    .updated { font-size: 12px; color: var(--om-subtle); }
+
+    /* ---------- stat cards ---------- */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .stat {
+      background: var(--om-paper);
+      border: 1px solid var(--om-border);
+      border-radius: var(--om-radius-lg);
+      box-shadow: var(--om-shadow-sm);
+      padding: 20px 22px;
+      position: relative;
+      overflow: hidden;
+    }
+    .stat::before {
+      content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+      background: var(--om-clay);
+    }
+    .stat .label { font-size: 13px; color: var(--om-muted); font-weight: 500; }
+    .stat .value {
+      font-family: var(--om-font-serif);
+      font-size: 36px; font-weight: 600; line-height: 1.1; margin-top: 8px;
+      color: var(--om-ink);
+    }
+    .stat .value small { font-size: 15px; font-weight: 500; color: var(--om-subtle); margin-left: 2px; }
+    .stat:nth-child(2)::before { background: var(--om-info); }
+    .stat:nth-child(3)::before { background: var(--om-success); }
+    .stat:nth-child(4)::before { background: var(--om-clay-deep); }
+
+    /* ---------- panels ---------- */
+    .grid-2 { display: grid; grid-template-columns: 1.15fr 1fr; gap: 16px; margin-bottom: 24px; }
+    .panel {
+      background: var(--om-paper);
+      border: 1px solid var(--om-border);
+      border-radius: var(--om-radius-lg);
+      box-shadow: var(--om-shadow-sm);
+      padding: 22px 24px;
+    }
+    .panel h2 {
+      margin: 0 0 18px;
+      font-family: var(--om-font-serif);
+      font-size: 17px; font-weight: 600;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .panel h2 .count { font-family: var(--om-font-sans); font-size: 12px; font-weight: 500; color: var(--om-subtle); }
+
+    /* bar chart */
+    .bar-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; font-size: 13px; }
+    .bar-row .blabel { width: 88px; flex: none; color: var(--om-muted); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bar-track { flex: 1; height: 22px; background: var(--om-cream-warm); border-radius: 6px; overflow: hidden; }
+    .bar-fill {
+      height: 100%; border-radius: 6px;
+      background: linear-gradient(90deg, var(--om-clay), var(--om-clay-hover));
+      width: 0; transition: width .6s cubic-bezier(.4,0,.2,1);
+      display: flex; align-items: center; justify-content: flex-end;
+    }
+    .bar-row .bval { width: 30px; flex: none; font-weight: 600; color: var(--om-ink-soft); }
+
+    /* donut */
+    .donut-wrap { display: flex; align-items: center; gap: 24px; }
+    .donut { flex: none; }
+    .donut-center-num { font-family: var(--om-font-serif); font-size: 26px; font-weight: 600; fill: var(--om-ink); }
+    .donut-center-txt { font-size: 11px; fill: var(--om-muted); }
+    .legend { flex: 1; }
+    .legend-item { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 10px; }
+    .legend-dot { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+    .legend-name { color: var(--om-ink-soft); text-transform: uppercase; font-size: 12px; letter-spacing: .3px; }
+    .legend-val { margin-left: auto; color: var(--om-muted); font-variant-numeric: tabular-nums; }
+
+    /* ---------- table ---------- */
+    .table-panel { background: var(--om-paper); border: 1px solid var(--om-border); border-radius: var(--om-radius-lg); box-shadow: var(--om-shadow-sm); overflow: hidden; }
+    .table-panel .phead { padding: 20px 24px 16px; }
+    .table-panel h2 { margin: 0; font-family: var(--om-font-serif); font-size: 17px; font-weight: 600; }
+    .table-scroll { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    thead th {
+      text-align: left; padding: 11px 24px;
+      background: var(--om-cream-soft);
+      color: var(--om-muted); font-weight: 600; font-size: 12px;
+      letter-spacing: .3px; text-transform: uppercase;
+      border-top: 1px solid var(--om-divider);
+      border-bottom: 1px solid var(--om-divider);
+      white-space: nowrap;
+    }
+    tbody td { padding: 13px 24px; border-bottom: 1px solid var(--om-divider); vertical-align: middle; color: var(--om-ink-soft); }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover { background: var(--om-cream-soft); }
+    .id-badge { font-family: var(--om-font-mono, monospace); font-size: 12px; color: var(--om-subtle); }
+    .name-cell { font-weight: 600; color: var(--om-ink); }
+    .att-list { display: flex; flex-wrap: wrap; gap: 8px; }
+    .att {
+      display: inline-flex; align-items: center; gap: 6px;
+      border: 1px solid var(--om-border); border-radius: 8px;
+      padding: 4px 8px 4px 4px; background: var(--om-cream-soft);
+      text-decoration: none; color: var(--om-ink-soft); font-size: 12px;
+      transition: border-color .15s, background .15s;
+      max-width: 220px;
+    }
+    .att:hover { border-color: var(--om-clay); background: var(--om-clay-soft); }
+    .att img { width: 30px; height: 30px; object-fit: cover; border-radius: 5px; flex: none; background: var(--om-cream-warm); }
+    .att .fileicon {
+      width: 30px; height: 30px; border-radius: 5px; flex: none;
+      background: var(--om-clay-soft); color: var(--om-clay-deep);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 9px; font-weight: 700; text-transform: uppercase;
+    }
+    .att .ameta { overflow: hidden; }
+    .att .aname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+    .att .asize { color: var(--om-subtle); font-size: 11px; }
+    .none { color: var(--om-subtle); font-size: 12.5px; }
+
+    /* ---------- states ---------- */
+    .state {
+      text-align: center; padding: 60px 24px; color: var(--om-muted);
+    }
+    .state .ticon { font-size: 30px; margin-bottom: 12px; }
+    .state h3 { font-family: var(--om-font-serif); margin: 0 0 6px; color: var(--om-ink-soft); font-size: 18px; }
+    .state p { margin: 0 0 18px; font-size: 14px; }
+    .state.error h3 { color: var(--om-danger); }
+    .state .retry {
+      border: none; background: var(--om-clay); color: #fff;
+      font-family: var(--om-font-sans); font-size: 14px; font-weight: 600;
+      padding: 10px 22px; border-radius: var(--om-radius); cursor: pointer;
+    }
+    .state .retry:hover { background: var(--om-clay-hover); }
+    .state code { background: var(--om-cream-warm); padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+    .skeleton { color: var(--om-subtle); }
+    .spin { animation: spin 1s linear infinite; transform-origin: center; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .foot { margin-top: 30px; text-align: center; font-size: 12px; color: var(--om-subtle); }
+
+    @media (max-width: 1024px) { .wrap { padding: 26px 20px 40px; } }
+    @media (max-width: 860px) {
+      .stats { grid-template-columns: repeat(2, 1fr); }
+      .grid-2 { grid-template-columns: 1fr; }
+      h1 { font-size: 26px; }
+    }
+    @media (max-width: 560px) {
+      .wrap { padding: 20px 14px 36px; }
+      h1 { font-size: 23px; }
+      .stats { gap: 10px; }              /* 手机保持 2×2，紧凑不空 */
+      .stat { padding: 14px 16px; }
+      .stat .value { font-size: 28px; }
+      .stat::before { width: 3px; }
+      .panel { padding: 18px 16px; }
+      thead th { padding: 10px 14px; }
+      tbody td { padding: 11px 14px; }
+      .donut-wrap { flex-direction: column; align-items: center; gap: 16px; }
+      .donut-wrap .legend { width: 100%; }
+      .bar-row .blabel { width: 62px; }
+      .att { max-width: 150px; }
+      .head-actions { width: 100%; justify-content: space-between; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <div class="brand">
+          <span class="brand-mark">M</span>
+          <span class="brand-name">OpenMentor</span>
+        </div>
+        <h1>作品采集 · 数据大屏</h1>
+        <div class="task-meta" id="taskMeta">正在连接数据接口…</div>
+      </div>
+      <div class="head-actions">
+        <span class="updated" id="updated"></span>
+        <button class="refresh-btn" id="refreshBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+          刷新
+        </button>
+      </div>
+    </header>
+
+    <!-- 统计卡片 -->
+    <section class="stats" id="stats">
+      <div class="stat"><div class="label">提交总数</div><div class="value skeleton">—</div></div>
+      <div class="stat"><div class="label">附件总数</div><div class="value skeleton">—</div></div>
+      <div class="stat"><div class="label">图片附件</div><div class="value skeleton">—</div></div>
+      <div class="stat"><div class="label">最新提交</div><div class="value skeleton">—</div></div>
+    </section>
+
+    <!-- 图表 -->
+    <section class="grid-2" id="charts">
+      <div class="panel">
+        <h2>提交时间分布 <span class="count" id="timeCount"></span></h2>
+        <div id="timeChart"><div class="skeleton" style="font-size:13px;color:var(--om-subtle)">加载中…</div></div>
+      </div>
+      <div class="panel">
+        <h2>附件类型分布 <span class="count" id="typeCount"></span></h2>
+        <div id="typeChart"><div class="skeleton" style="font-size:13px;color:var(--om-subtle)">加载中…</div></div>
+      </div>
+    </section>
+
+    <!-- 明细表 -->
+    <section class="table-panel">
+      <div class="phead"><h2>提交明细</h2></div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th style="width:64px">ID</th><th style="width:180px">姓名 / 小组</th><th style="width:170px">提交时间</th><th>作品附件</th></tr>
+          </thead>
+          <tbody id="tbody">
+            <tr><td colspan="4" class="skeleton" style="text-align:center;padding:30px">加载中…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="foot">由 OpenMentor 提供支持 · 开源 AI 导师 · 数据来源 QuickForm API</div>
+  </div>
+
+  <script>
+    const TASK_ID = '__OM_TASK_API_ID__';
+    const API = window.location.origin + '/api/' + TASK_ID;
+    const ORIGIN = window.location.origin;
+
+    // 类型分布配色（按出现顺序循环取色）
+    const PALETTE = ['#D97757', '#3370FF', '#5B7553', '#C56548', '#94918B', '#A04D38', '#E8B04B', '#7A5C9E'];
+
+    const $ = (id) => document.getElementById(id);
+
+    // ---------- 工具函数 ----------
+    function escapeHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    function fmtSize(bytes) {
+      const n = Number(bytes);
+      if (!isFinite(n) || n <= 0) return '';
+      if (n < 1024) return n + ' B';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+      return (n / 1024 / 1024).toFixed(2) + ' MB';
+    }
+    function resolveUrl(u) {
+      if (!u) return '';
+      if (/^https?:\/\//i.test(u)) return u;
+      return ORIGIN + (u.charAt(0) === '/' ? '' : '/') + u;
+    }
+    // 把 "2026-06-13 20:29:00" 这类字符串安全解析为 Date
+    function parseDate(s) {
+      if (!s) return null;
+      let str = String(s).trim().replace(' ', 'T');
+      let d = new Date(str);
+      if (isNaN(d.getTime())) d = new Date(String(s));
+      return isNaN(d.getTime()) ? null : d;
+    }
+    function dateKey(d) {
+      const p = (n) => String(n).padStart(2, '0');
+      return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+    }
+
+    // ---------- 主流程 ----------
+    async function load() {
+      const btn = $('refreshBtn');
+      btn.disabled = true;
+      const svg = btn.querySelector('svg');
+      if (svg) svg.classList.add('spin');
+      $('taskMeta').textContent = '正在连接数据接口…';
+
+      try {
+        const res = await fetch(API, { method: 'GET', headers: { 'Accept': 'application/json' }, cache: 'no-store' });
+        if (!res.ok) throw new Error('接口返回状态码 ' + res.status);
+        let json;
+        try { json = await res.json(); }
+        catch (e) { throw new Error('返回内容不是合法的 JSON'); }
+        render(json || {});
+      } catch (err) {
+        renderError(err && err.message ? err.message : String(err));
+      } finally {
+        btn.disabled = false;
+        if (svg) svg.classList.remove('spin');
+      }
+    }
+
+    function render(json) {
+      const submissions = Array.isArray(json.submissions) ? json.submissions : [];
+      const taskTitle = json.task_title || '未命名任务';
+      const taskId = json.task_id || '—';
+      const total = (typeof json.total_submissions === 'number') ? json.total_submissions : submissions.length;
+
+      $('taskMeta').innerHTML = '任务：<b>' + escapeHtml(taskTitle) + '</b> · 任务ID <code style="font-size:12px">' + escapeHtml(taskId) + '</code>';
+      $('updated').textContent = '更新于 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false });
+
+      // 规整每条提交
+      const rows = submissions.map((s) => {
+        const data = (s && s.data) ? s.data : {};
+        const atts = Array.isArray(data._attachments) ? data._attachments : [];
+        return {
+          id: (s && s.id != null) ? s.id : '—',
+          name: (data.name != null && String(data.name).trim() !== '') ? String(data.name) : '（未填写）',
+          submitted_at: (s && s.submitted_at) ? s.submitted_at : '',
+          atts: atts
+        };
+      });
+
+      // ---- 统计 ----
+      const allAtts = rows.reduce((arr, r) => arr.concat(r.atts), []);
+      const imgCount = allAtts.filter(a => a && (a.is_image === true)).length;
+      const dates = rows.map(r => parseDate(r.submitted_at)).filter(Boolean).sort((a, b) => a - b);
+      const latest = dates.length ? dates[dates.length - 1] : null;
+      const latestStr = latest
+        ? (dateKey(latest).slice(5) + ' ' + latest.toTimeString().slice(0, 5))
+        : '—';
+
+      renderStats(total, allAtts.length, imgCount, latestStr);
+      renderTimeChart(rows);
+      renderTypeChart(allAtts);
+      renderTable(rows);
+    }
+
+    function renderStats(total, attTotal, imgCount, latestStr) {
+      const cards = [
+        { label: '提交总数', value: total, unit: '条' },
+        { label: '附件总数', value: attTotal, unit: '个' },
+        { label: '图片附件', value: imgCount, unit: '张' },
+        { label: '最新提交', value: latestStr, unit: '' }
+      ];
+      $('stats').innerHTML = cards.map(c => {
+        const isNum = typeof c.value === 'number';
+        const big = isNum ? c.value : escapeHtml(c.value);
+        const fs = isNum ? '' : ' style="font-size:22px"';
+        const unit = c.unit ? '<small>' + c.unit + '</small>' : '';
+        return '<div class="stat"><div class="label">' + c.label + '</div>'
+             + '<div class="value"' + fs + '>' + big + (isNum ? unit : '') + '</div></div>';
+      }).join('');
+    }
+
+    function renderTimeChart(rows) {
+      const el = $('timeChart');
+      const counts = {};
+      let unknown = 0;
+      rows.forEach(r => {
+        const d = parseDate(r.submitted_at);
+        if (!d) { unknown++; return; }
+        const k = dateKey(d);
+        counts[k] = (counts[k] || 0) + 1;
+      });
+      const keys = Object.keys(counts).sort();
+      if (unknown > 0) keys.push('未知时间');
+      if (keys.length === 0) {
+        el.innerHTML = '<div class="none">暂无可统计的提交时间</div>';
+        $('timeCount').textContent = '';
+        return;
+      }
+      const vals = keys.map(k => k === '未知时间' ? unknown : counts[k]);
+      const max = Math.max.apply(null, vals);
+      $('timeCount').textContent = '共 ' + keys.length + ' 天';
+      el.innerHTML = keys.map((k, i) => {
+        const v = vals[i];
+        const w = max > 0 ? Math.max(6, (v / max) * 100) : 0;
+        const label = k === '未知时间' ? k : k.slice(5);
+        return '<div class="bar-row"><div class="blabel" title="' + escapeHtml(k) + '">' + escapeHtml(label) + '</div>'
+             + '<div class="bar-track"><div class="bar-fill" style="width:0"></div></div>'
+             + '<div class="bval">' + v + '</div></div>';
+      }).join('');
+      // 触发动画
+      requestAnimationFrame(() => {
+        el.querySelectorAll('.bar-fill').forEach((f, i) => {
+          const v = vals[i];
+          f.style.width = (max > 0 ? Math.max(6, (v / max) * 100) : 0) + '%';
+        });
+      });
+    }
+
+    function renderTypeChart(atts) {
+      const el = $('typeChart');
+      $('typeCount').textContent = atts.length ? '共 ' + atts.length + ' 个附件' : '';
+      if (!atts.length) {
+        el.innerHTML = '<div class="none">暂无附件</div>';
+        return;
+      }
+      const counts = {};
+      atts.forEach(a => {
+        let ext = (a && a.ext) ? String(a.ext).toLowerCase()
+                : (a && a.name && a.name.indexOf('.') > -1 ? a.name.split('.').pop().toLowerCase() : '其他');
+        if (!ext) ext = '其他';
+        counts[ext] = (counts[ext] || 0) + 1;
+      });
+      const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+      const total = atts.length;
+
+      // 甜甜圈
+      const R = 54, C = 2 * Math.PI * R, cx = 70, cy = 70, sw = 22;
+      let offset = 0;
+      const segs = entries.map(([ext, n], i) => {
+        const frac = n / total;
+        const len = frac * C;
+        const color = PALETTE[i % PALETTE.length];
+        const seg = '<circle cx="' + cx + '" cy="' + cy + '" r="' + R + '" fill="none" stroke="' + color
+                  + '" stroke-width="' + sw + '" stroke-dasharray="' + len + ' ' + (C - len)
+                  + '" stroke-dashoffset="' + (-offset) + '" transform="rotate(-90 ' + cx + ' ' + cy + ')"></circle>';
+        offset += len;
+        return seg;
+      }).join('');
+
+      const donut = '<svg class="donut" width="140" height="140" viewBox="0 0 140 140">'
+        + '<circle cx="' + cx + '" cy="' + cy + '" r="' + R + '" fill="none" stroke="var(--om-cream-warm)" stroke-width="' + sw + '"></circle>'
+        + segs
+        + '<text class="donut-center-num" x="70" y="70" text-anchor="middle" dominant-baseline="central">' + total + '</text>'
+        + '<text class="donut-center-txt" x="70" y="90" text-anchor="middle">附件</text>'
+        + '</svg>';
+
+      const legend = '<div class="legend">' + entries.map(([ext, n], i) => {
+        const color = PALETTE[i % PALETTE.length];
+        const pct = Math.round((n / total) * 100);
+        return '<div class="legend-item"><span class="legend-dot" style="background:' + color + '"></span>'
+             + '<span class="legend-name">' + escapeHtml(ext) + '</span>'
+             + '<span class="legend-val">' + n + ' · ' + pct + '%</span></div>';
+      }).join('') + '</div>';
+
+      el.innerHTML = '<div class="donut-wrap">' + donut + legend + '</div>';
+    }
+
+    function renderTable(rows) {
+      const tb = $('tbody');
+      if (!rows.length) {
+        tb.innerHTML = '<tr><td colspan="4"><div class="state"><div class="ticon">📭</div>'
+          + '<h3>暂无提交数据</h3><p>当前还没有任何作品提交，提交后刷新即可看到。</p></div></td></tr>';
+        return;
+      }
+      // 最新的排在前面
+      const sorted = rows.slice().sort((a, b) => {
+        const da = parseDate(a.submitted_at), db = parseDate(b.submitted_at);
+        if (da && db) return db - da;
+        return 0;
+      });
+      tb.innerHTML = sorted.map(r => {
+        let attHtml;
+        if (!r.atts.length) {
+          attHtml = '<span class="none">无附件</span>';
+        } else {
+          attHtml = '<div class="att-list">' + r.atts.map(a => {
+            const url = resolveUrl(a && a.url);
+            const name = (a && a.name) ? a.name : '附件';
+            const ext = (a && a.ext) ? String(a.ext) : (name.indexOf('.') > -1 ? name.split('.').pop() : 'file');
+            const size = fmtSize(a && a.size);
+            const isImg = a && a.is_image === true && url;
+            const thumb = isImg
+              ? '<img src="' + escapeHtml(url) + '" alt="" loading="lazy" onerror="this.outerHTML=\'<span class=&quot;fileicon&quot;>' + escapeHtml(ext) + '</span>\'">'
+              : '<span class="fileicon">' + escapeHtml(ext.slice(0, 4)) + '</span>';
+            const meta = '<span class="ameta"><span class="aname">' + escapeHtml(name) + '</span>'
+                       + (size ? '<span class="asize">' + size + '</span>' : '') + '</span>';
+            if (url) {
+              return '<a class="att" href="' + escapeHtml(url) + '" target="_blank" rel="noopener" title="' + escapeHtml(name) + '">' + thumb + meta + '</a>';
+            }
+            return '<span class="att" title="' + escapeHtml(name) + '">' + thumb + meta + '</span>';
+          }).join('') + '</div>';
+        }
+        return '<tr>'
+          + '<td><span class="id-badge">#' + escapeHtml(r.id) + '</span></td>'
+          + '<td class="name-cell">' + escapeHtml(r.name) + '</td>'
+          + '<td>' + (r.submitted_at ? escapeHtml(r.submitted_at) : '<span class="none">—</span>') + '</td>'
+          + '<td>' + attHtml + '</td>'
+          + '</tr>';
+      }).join('');
+    }
+
+    function renderError(msg) {
+      $('taskMeta').innerHTML = '<span style="color:var(--om-danger)">数据接口连接失败</span>';
+      $('updated').textContent = '';
+      // 统计卡复位
+      $('stats').querySelectorAll('.value').forEach(v => { v.textContent = '—'; v.classList.add('skeleton'); });
+      $('timeChart').innerHTML = '<div class="none">—</div>';
+      $('typeChart').innerHTML = '<div class="none">—</div>';
+      $('timeCount').textContent = '';
+      $('typeCount').textContent = '';
+      $('tbody').innerHTML = '<tr><td colspan="4"><div class="state error">'
+        + '<div class="ticon">⚠️</div><h3>无法加载数据</h3>'
+        + '<p>' + escapeHtml(msg) + '<br><span style="font-size:12px;color:var(--om-subtle)">'
+        + '请确认接口 <code>' + escapeHtml(API) + '</code> 可访问，且已允许跨域（CORS）。</span></p>'
+        + '<button class="retry" type="button" onclick="load()">重新加载</button>'
+        + '</div></td></tr>';
+    }
+
+    $('refreshBtn').addEventListener('click', load);
+    load();
+  </script>
+</body>
+</html>

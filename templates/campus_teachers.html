@@ -1,0 +1,250 @@
+{% extends 'base.html' %}
+
+{% block title %}教师账号管理 - {{ get_app_name() }}{% endblock %}
+
+{% block styles %}
+{{ super() }}
+<style>
+    .om-campus-search {
+        border-bottom: 1px solid var(--om-border);
+        background: var(--om-cream-soft);
+    }
+
+    .om-campus-search-actions {
+        flex-wrap: nowrap;
+    }
+
+    .om-campus-search-actions .btn {
+        min-width: 4.8rem;
+        white-space: nowrap;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.25rem;
+    }
+
+    .om-campus-actions .btn {
+        font-size: 0.76rem;
+        line-height: 1.15;
+        padding: 0.28rem 0.52rem;
+        white-space: nowrap;
+    }
+
+    .om-campus-actions {
+        flex-wrap: nowrap !important;
+        min-width: 7.8rem;
+        white-space: nowrap;
+    }
+
+    .om-campus-actions form {
+        flex: 0 0 auto;
+    }
+
+    .om-campus-status-col {
+        min-width: 6.2rem;
+        white-space: nowrap;
+    }
+
+    .om-campus-stats-col {
+        min-width: 8.6rem;
+    }
+
+    .om-campus-stats-col div {
+        white-space: nowrap;
+    }
+
+    .om-campus-pager .page-link {
+        color: var(--om-ink);
+    }
+
+    .om-campus-pager .page-item.active .page-link {
+        background: var(--om-ink);
+        border-color: var(--om-ink);
+        color: var(--om-paper);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+    <div>
+        <h1 class="page-title mb-1">教师账号管理</h1>
+        <p class="page-subtitle mb-0">校园版管理员可以创建、禁用和重置教师账号。禁用账号不会删除教师数据。</p>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0" style="font-weight: 600;">创建教师账号</h5>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('campus_teachers') }}">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">手机号 / 账号</label>
+                        <input type="text" class="form-control" id="username" name="username" required maxlength="50" autocomplete="off" placeholder="建议使用手机号">
+                    </div>
+                    <div class="mb-3">
+                        <label for="display_name" class="form-label">姓名</label>
+                        <input type="text" class="form-control" id="display_name" name="display_name" maxlength="100" placeholder="例如：王老师">
+                    </div>
+                    <div class="mb-3">
+                        <label for="temp_password" class="form-label">临时密码</label>
+                        <input type="text" class="form-control" id="temp_password" name="temp_password" minlength="6" placeholder="留空默认 openmentor">
+                        <div class="form-text">教师首次登录后会被要求修改密码。</div>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">创建账号</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0" style="font-weight: 600;">批量导入</h5>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('campus_teachers_import') }}" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="teacher_file" class="form-label">教师账号 Excel</label>
+                        <input type="file" class="form-control" id="teacher_file" name="teacher_file" accept=".xlsx,.csv" required>
+                        <div class="form-text">表头包含「手机号」和「姓名」。默认密码 openmentor，首次登录需修改。</div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-outline-primary flex-fill">导入账号</button>
+                        <a class="btn btn-outline-secondary" href="{{ url_for('campus_teachers_template') }}">模板</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0" style="font-weight: 600;">账号列表</h5>
+                <span class="text-muted small">共 {{ total_users }} 个账号</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="om-campus-search p-3">
+                    <form method="GET" action="{{ url_for('campus_teachers') }}" class="row g-2 align-items-end">
+                        <div class="col-md-4">
+                            <label for="teacher_search" class="form-label small text-muted mb-1">搜索教师</label>
+                            <input type="search" class="form-control" id="teacher_search" name="q" value="{{ search_query }}" placeholder="输入姓名、手机号或账号">
+                        </div>
+                        <div class="col-md-3">
+                            <label for="per_page" class="form-label small text-muted mb-1">每页显示</label>
+                            <select class="form-select" id="per_page" name="per_page" onchange="this.form.submit()">
+                                {% for option in per_page_options %}
+                                <option value="{{ option }}" {% if option == per_page %}selected{% endif %}>{{ option }} 个</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-5 d-flex gap-2 om-campus-search-actions">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-search"></i> 搜索
+                            </button>
+                            {% if search_query %}
+                            <a class="btn btn-outline-secondary" href="{{ url_for('campus_teachers', per_page=per_page) }}">清除</a>
+                            {% endif %}
+                        </div>
+                    </form>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>账号</th>
+                                <th>角色</th>
+                                <th class="om-campus-status-col">状态</th>
+                                <th class="om-campus-stats-col">数据概览</th>
+                                <th>最近登录</th>
+                                <th class="text-end" style="min-width: 8.2rem;">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for user in users %}
+                            <tr>
+                                <td>
+                                    <div style="font-weight: 600;">{{ user.display_name or user.username }}</div>
+                                    <div class="text-muted small">{{ user.username }}</div>
+                                </td>
+                                <td>
+                                    {% if user.role == 'admin' %}
+                                    <span class="badge bg-dark">admin</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">teacher</span>
+                                    {% endif %}
+                                </td>
+                                <td class="om-campus-status-col">
+                                    {% if user.is_active %}
+                                    <span class="badge bg-success">启用</span>
+                                    {% else %}
+                                    <span class="badge bg-warning text-dark">禁用</span>
+                                    {% endif %}
+                                    {% if user.force_password_change %}
+                                    <div class="small text-muted mt-1">需改密码</div>
+                                    {% endif %}
+                                </td>
+                                <td class="small text-muted om-campus-stats-col">
+                                    <div>AI 导师 {{ stats[user.id].assistant_count }}</div>
+                                    <div>数据任务 {{ stats[user.id].task_count }} · 花名册 {{ stats[user.id].roster_count }}</div>
+                                </td>
+                                <td class="small text-muted">
+                                    {% if user.last_login_at %}
+                                    {{ user.last_login_at.strftime('%Y-%m-%d %H:%M') }}
+                                    {% else %}
+                                    未登录
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    <div class="om-campus-actions d-flex gap-1 justify-content-end align-items-center">
+                                        <form method="POST" action="{{ url_for('campus_teacher_reset_password', user_id=user.id) }}" class="d-inline">
+                                            <button type="submit" class="btn btn-sm btn-outline-primary" onclick="return confirm('确定重置该账号密码吗？')">重置密码</button>
+                                        </form>
+                                        {% if user.role != 'admin' %}
+                                        <form method="POST" action="{{ url_for('campus_teacher_toggle', user_id=user.id) }}" class="d-inline">
+                                            <button type="submit" class="btn btn-sm btn-outline-secondary" onclick="return confirm('确定{{ '禁用' if user.is_active else '启用' }}该账号吗？')">
+                                                {{ '禁用' if user.is_active else '启用' }}
+                                            </button>
+                                        </form>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="6" class="text-center text-muted py-4">暂无账号</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card-footer d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div class="text-muted small">
+                    {% if total_users %}
+                    显示第 {{ start_index }}-{{ end_index }} 个，共 {{ total_users }} 个
+                    {% else %}
+                    没有符合条件的账号
+                    {% endif %}
+                </div>
+                <nav class="om-campus-pager" aria-label="教师账号分页">
+                    <ul class="pagination pagination-sm mb-0">
+                        <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+                            <a class="page-link" href="{{ url_for('campus_teachers', q=search_query, per_page=per_page, page=page-1) }}">上一页</a>
+                        </li>
+                        <li class="page-item active" aria-current="page">
+                            <span class="page-link">{{ page }} / {{ total_pages }}</span>
+                        </li>
+                        <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+                            <a class="page-link" href="{{ url_for('campus_teachers', q=search_query, per_page=per_page, page=page+1) }}">下一页</a>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

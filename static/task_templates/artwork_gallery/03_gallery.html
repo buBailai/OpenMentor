@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>作品展览 · OpenMentor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Serif+SC:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --om-cream:        #F0EEE6;
+      --om-cream-soft:   #F7F4EC;
+      --om-cream-warm:   #E8E4D8;
+      --om-paper:        #FFFFFF;
+      --om-ink:          #141413;
+      --om-ink-soft:     #2D2A24;
+      --om-muted:        #6B6760;
+      --om-subtle:       #94918B;
+      --om-border:       #E5E0D8;
+      --om-border-strong:#C9C3B8;
+      --om-divider:      #EDE8DD;
+      --om-clay:         #D97757;
+      --om-clay-hover:   #C56548;
+      --om-clay-soft:    #F5E6DD;
+      --om-clay-deep:    #A04D38;
+      --om-success:      #5B7553;
+      --om-danger:       #C0584A;
+      --om-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', sans-serif;
+      --om-font-serif: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', 'STSong', serif;
+      --om-radius:    10px;
+      --om-radius-lg: 14px;
+      --om-radius-xl: 20px;
+      --om-shadow-sm: 0 1px 3px rgba(20, 17, 12, 0.05);
+      --om-shadow-md: 0 4px 16px rgba(20, 17, 12, 0.06);
+      --om-shadow-lg: 0 12px 40px rgba(20, 17, 12, 0.10);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--om-cream-soft);
+      background-image: radial-gradient(circle at 12% 0%, rgba(217, 119, 87, 0.06), transparent 42%),
+                        radial-gradient(circle at 100% 8%, rgba(217, 119, 87, 0.05), transparent 38%);
+      font-family: var(--om-font-sans);
+      color: var(--om-ink);
+      line-height: 1.6;
+    }
+    .wrap { max-width: 1240px; margin: 0 auto; padding: 32px 28px 56px; }
+
+    /* header */
+    header {
+      display: flex; align-items: flex-end; justify-content: space-between;
+      flex-wrap: wrap; gap: 16px; margin-bottom: 30px;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .brand-mark {
+      width: 28px; height: 28px; border-radius: 8px;
+      background: var(--om-clay); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--om-font-serif); font-weight: 600; font-size: 16px; line-height: 1;
+    }
+    .brand-name { font-size: 14px; font-weight: 600; color: var(--om-ink-soft); }
+    h1 { margin: 0; font-family: var(--om-font-serif); font-size: 32px; font-weight: 600; letter-spacing: .5px; }
+    .task-meta { margin-top: 6px; color: var(--om-muted); font-size: 14px; }
+    .task-meta b { color: var(--om-clay-deep); font-weight: 600; }
+    .head-actions { display: flex; align-items: center; gap: 12px; }
+    .updated { font-size: 12px; color: var(--om-subtle); }
+    .refresh-btn {
+      border: 1px solid var(--om-border-strong); background: var(--om-paper);
+      color: var(--om-ink-soft); font-family: var(--om-font-sans); font-size: 14px; font-weight: 500;
+      padding: 9px 16px; border-radius: var(--om-radius); cursor: pointer; box-shadow: var(--om-shadow-sm);
+      transition: border-color .18s, color .18s, background .18s;
+      display: inline-flex; align-items: center; gap: 7px;
+    }
+    .refresh-btn:hover { border-color: var(--om-clay); color: var(--om-clay-deep); background: var(--om-clay-soft); }
+    .refresh-btn:disabled { opacity: .55; cursor: not-allowed; }
+    .refresh-btn svg { width: 15px; height: 15px; }
+    .spin { animation: spin 1s linear infinite; transform-origin: center; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* gallery — masonry via CSS columns */
+    .gallery { columns: 4 250px; column-gap: 18px; }
+    .card {
+      break-inside: avoid;
+      margin: 0 0 18px;
+      background: var(--om-paper);
+      border: 1px solid var(--om-border);
+      border-radius: var(--om-radius-lg);
+      box-shadow: var(--om-shadow-sm);
+      overflow: hidden;
+      transition: box-shadow .2s, transform .2s, border-color .2s;
+    }
+    .card:hover { box-shadow: var(--om-shadow-lg); transform: translateY(-3px); border-color: var(--om-border-strong); }
+
+    .thumb {
+      display: block; width: 100%; cursor: zoom-in;
+      background: var(--om-cream-warm);
+      position: relative;
+    }
+    .thumb img { display: block; width: 100%; height: auto; }
+    .filecard {
+      display: flex; align-items: center; gap: 14px;
+      padding: 22px 20px; background: var(--om-cream-soft);
+      text-decoration: none; cursor: pointer;
+    }
+    .filecard .ficon {
+      width: 52px; height: 52px; border-radius: 10px; flex: none;
+      background: var(--om-clay-soft); color: var(--om-clay-deep);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700; text-transform: uppercase;
+    }
+    .filecard .ftxt { overflow: hidden; }
+    .filecard .fname { font-weight: 600; color: var(--om-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; }
+    .filecard .fsub { font-size: 12px; color: var(--om-subtle); margin-top: 2px; }
+
+    .meta { padding: 13px 16px 15px; }
+    .meta .who { display: flex; align-items: center; gap: 8px; }
+    .avatar {
+      width: 26px; height: 26px; border-radius: 50%; flex: none;
+      background: var(--om-clay); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 600; font-family: var(--om-font-serif);
+    }
+    .meta .name { font-weight: 600; font-size: 14.5px; color: var(--om-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .meta .when { margin-top: 7px; font-size: 12px; color: var(--om-subtle); display: flex; align-items: center; gap: 6px; }
+    .meta .fileline { margin-top: 7px; font-size: 12px; color: var(--om-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* states */
+    .state { text-align: center; padding: 80px 24px; color: var(--om-muted); }
+    .state .ticon { font-size: 34px; margin-bottom: 14px; }
+    .state h3 { font-family: var(--om-font-serif); margin: 0 0 6px; color: var(--om-ink-soft); font-size: 20px; }
+    .state.error h3 { color: var(--om-danger); }
+    .state p { margin: 0 0 20px; font-size: 14px; }
+    .state .retry { border: none; background: var(--om-clay); color: #fff; font-family: var(--om-font-sans); font-size: 14px; font-weight: 600; padding: 10px 24px; border-radius: var(--om-radius); cursor: pointer; }
+    .state .retry:hover { background: var(--om-clay-hover); }
+    .state code { background: var(--om-cream-warm); padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+
+    /* skeleton */
+    .sk-card { break-inside: avoid; margin: 0 0 18px; background: var(--om-paper); border: 1px solid var(--om-border); border-radius: var(--om-radius-lg); overflow: hidden; }
+    .sk-img { width: 100%; background: linear-gradient(90deg, var(--om-cream-warm), var(--om-cream-soft), var(--om-cream-warm)); background-size: 200% 100%; animation: shimmer 1.4s infinite; }
+    .sk-line { height: 12px; margin: 14px 16px; border-radius: 6px; background: var(--om-cream-warm); }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+    /* lightbox */
+    .lightbox {
+      position: fixed; inset: 0; z-index: 100;
+      background: rgba(20, 17, 12, 0.86);
+      display: none; align-items: center; justify-content: center;
+      padding: 40px; backdrop-filter: blur(4px);
+    }
+    .lightbox.open { display: flex; }
+    .lb-img { max-width: 90vw; max-height: 80vh; border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,.5); background: #fff; }
+    .lb-caption {
+      position: absolute; bottom: 26px; left: 0; right: 0; text-align: center;
+      color: #F7F4EC; font-size: 14px;
+    }
+    .lb-caption b { font-family: var(--om-font-serif); font-weight: 600; }
+    .lb-caption span { color: #C9C3B8; }
+    .lb-btn {
+      position: absolute; top: 50%; transform: translateY(-50%);
+      width: 46px; height: 46px; border-radius: 50%;
+      border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.1);
+      color: #fff; font-size: 22px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: background .15s;
+    }
+    .lb-btn:hover { background: rgba(255,255,255,.22); }
+    .lb-prev { left: 24px; } .lb-next { right: 24px; }
+    .lb-close { position: absolute; top: 22px; right: 26px; width: 42px; height: 42px; font-size: 24px; }
+    .lb-count { position: absolute; top: 28px; left: 28px; color: #C9C3B8; font-size: 13px; }
+    .lb-open-link { position: absolute; bottom: 24px; right: 28px; color: #F7F4EC; font-size: 13px; text-decoration: none; border: 1px solid rgba(255,255,255,.25); padding: 6px 14px; border-radius: 8px; }
+    .lb-open-link:hover { background: rgba(255,255,255,.15); }
+
+    .foot { margin-top: 36px; text-align: center; font-size: 12px; color: var(--om-subtle); }
+
+    @media (max-width: 1024px) { .wrap { padding: 26px 20px 44px; } .gallery { columns: 3 200px; } }
+    @media (max-width: 700px) { h1 { font-size: 27px; } .gallery { columns: 2 150px; column-gap: 14px; } }
+    @media (max-width: 540px) {
+      .wrap { padding: 20px 14px 40px; }
+      h1 { font-size: 23px; }
+      .gallery { columns: 2 140px; column-gap: 12px; }
+      .card { margin-bottom: 12px; }
+      .head-actions { width: 100%; justify-content: space-between; }
+      /* 灯箱手机适配：缩小留白、按钮归位、隐藏「新标签打开」让位 */
+      .lightbox { padding: 14px; }
+      .lb-img { max-width: 94vw; max-height: 74vh; }
+      .lb-btn { width: 40px; height: 40px; font-size: 20px; }
+      .lb-prev { left: 8px; } .lb-next { right: 8px; }
+      .lb-close { top: 14px; right: 14px; }
+      .lb-count { top: 18px; left: 16px; }
+      .lb-caption { bottom: 14px; font-size: 12.5px; padding: 0 14px; }
+      .lb-open-link { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <div class="brand">
+          <span class="brand-mark">M</span>
+          <span class="brand-name">OpenMentor</span>
+        </div>
+        <h1>作品展览</h1>
+        <div class="task-meta" id="taskMeta">正在连接数据接口…</div>
+      </div>
+      <div class="head-actions">
+        <span class="updated" id="updated"></span>
+        <button class="refresh-btn" id="refreshBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+          刷新
+        </button>
+      </div>
+    </header>
+
+    <div class="gallery" id="gallery"></div>
+
+    <div class="foot">由 OpenMentor 提供支持 · 开源 AI 导师 · 作品采集画廊</div>
+  </div>
+
+  <!-- lightbox -->
+  <div class="lightbox" id="lightbox">
+    <span class="lb-count" id="lbCount"></span>
+    <button class="lb-btn lb-close" id="lbClose" type="button" aria-label="关闭">&times;</button>
+    <button class="lb-btn lb-prev" id="lbPrev" type="button" aria-label="上一张">&#8249;</button>
+    <img class="lb-img" id="lbImg" src="" alt="">
+    <button class="lb-btn lb-next" id="lbNext" type="button" aria-label="下一张">&#8250;</button>
+    <div class="lb-caption" id="lbCaption"></div>
+    <a class="lb-open-link" id="lbOpen" href="#" target="_blank" rel="noopener">在新标签打开原图 ↗</a>
+  </div>
+
+  <script>
+    const TASK_ID = '__OM_TASK_API_ID__';
+    const API = window.location.origin + '/api/' + TASK_ID;
+    const ORIGIN = window.location.origin;
+    const $ = (id) => document.getElementById(id);
+
+    function escapeHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    function fmtSize(bytes) {
+      const n = Number(bytes);
+      if (!isFinite(n) || n <= 0) return '';
+      if (n < 1024) return n + ' B';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+      return (n / 1024 / 1024).toFixed(2) + ' MB';
+    }
+    function resolveUrl(u) {
+      if (!u) return '';
+      if (/^https?:\/\//i.test(u)) return u;
+      return ORIGIN + (u.charAt(0) === '/' ? '' : '/') + u;
+    }
+    function initial(name) {
+      const s = String(name || '').trim();
+      return s ? s.charAt(0).toUpperCase() : '?';
+    }
+
+    // 当前画廊里的图片项，用于灯箱切换
+    let imageItems = [];
+    let lbIndex = 0;
+
+    async function load() {
+      const btn = $('refreshBtn');
+      btn.disabled = true;
+      const svg = btn.querySelector('svg');
+      if (svg) svg.classList.add('spin');
+      $('taskMeta').textContent = '正在连接数据接口…';
+      renderSkeleton();
+
+      try {
+        const res = await fetch(API, { method: 'GET', headers: { 'Accept': 'application/json' }, cache: 'no-store' });
+        if (!res.ok) throw new Error('接口返回状态码 ' + res.status);
+        let json;
+        try { json = await res.json(); }
+        catch (e) { throw new Error('返回内容不是合法的 JSON'); }
+        render(json || {});
+      } catch (err) {
+        renderError(err && err.message ? err.message : String(err));
+      } finally {
+        btn.disabled = false;
+        if (svg) svg.classList.remove('spin');
+      }
+    }
+
+    function renderSkeleton() {
+      const heights = [200, 260, 180, 300, 220, 240, 190, 280];
+      $('gallery').innerHTML = heights.map(h =>
+        '<div class="sk-card"><div class="sk-img" style="height:' + h + 'px"></div>'
+        + '<div class="sk-line" style="width:60%"></div><div class="sk-line" style="width:40%"></div></div>'
+      ).join('');
+    }
+
+    function render(json) {
+      const submissions = Array.isArray(json.submissions) ? json.submissions : [];
+      const taskTitle = json.task_title || '未命名任务';
+      const total = (typeof json.total_submissions === 'number') ? json.total_submissions : submissions.length;
+      $('taskMeta').innerHTML = '任务：<b>' + escapeHtml(taskTitle) + '</b> · 共收到 <b>' + total + '</b> 份作品';
+      $('updated').textContent = '更新于 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false });
+
+      // 展开成「一张附件 = 一个画廊卡片」；没有附件的提交也保留一张占位卡
+      const cards = [];
+      imageItems = [];
+      submissions.forEach(s => {
+        const data = (s && s.data) ? s.data : {};
+        const name = (data.name != null && String(data.name).trim() !== '') ? String(data.name) : '（未署名）';
+        const when = (s && s.submitted_at) ? s.submitted_at : '';
+        const atts = Array.isArray(data._attachments) ? data._attachments : [];
+        if (!atts.length) {
+          cards.push({ type: 'empty', name, when });
+        } else {
+          atts.forEach(a => {
+            const url = resolveUrl(a && a.url);
+            const fname = (a && a.name) ? a.name : '附件';
+            const ext = (a && a.ext) ? String(a.ext) : (fname.indexOf('.') > -1 ? fname.split('.').pop() : 'file');
+            const size = fmtSize(a && a.size);
+            const isImg = !!(a && a.is_image === true && url);
+            const card = { type: isImg ? 'image' : 'file', name, when, url, fname, ext, size };
+            if (isImg) { card.imgIndex = imageItems.length; imageItems.push(card); }
+            cards.push(card);
+          });
+        }
+      });
+
+      if (!cards.length) {
+        $('gallery').innerHTML = '';
+        $('gallery').insertAdjacentHTML('beforeend',
+          '<div class="state" style="columns:1;column-span:all"><div class="ticon">🖼️</div>'
+          + '<h3>展览还在筹备中</h3><p>目前还没有任何作品提交，提交后点击刷新即可展出。</p></div>');
+        // column-span 在 columns 容器内的兼容写法：直接替换容器
+        $('gallery').style.columns = 'auto';
+        return;
+      }
+      $('gallery').style.columns = '';
+      $('gallery').innerHTML = cards.map(cardHtml).join('');
+
+      // 绑定图片点击 → 灯箱
+      $('gallery').querySelectorAll('[data-img-index]').forEach(el => {
+        el.addEventListener('click', () => openLightbox(parseInt(el.getAttribute('data-img-index'), 10)));
+      });
+    }
+
+    function cardHtml(c) {
+      const av = '<span class="avatar">' + escapeHtml(initial(c.name)) + '</span>';
+      const nameLine = '<span class="name" title="' + escapeHtml(c.name) + '">' + escapeHtml(c.name) + '</span>';
+      const whenLine = c.when
+        ? '<div class="when">🕒 ' + escapeHtml(c.when) + '</div>'
+        : '';
+
+      if (c.type === 'image') {
+        const onerr = "this.closest('.card').querySelector('.thumb').outerHTML='<div class=&quot;filecard&quot;><span class=&quot;ficon&quot;>"
+          + escapeHtml(c.ext.slice(0,4)) + "</span><span class=&quot;ftxt&quot;><span class=&quot;fname&quot;>" + escapeHtml(c.fname)
+          + "</span><span class=&quot;fsub&quot;>图片加载失败</span></span></div>'";
+        return '<div class="card">'
+          + '<div class="thumb" data-img-index="' + c.imgIndex + '">'
+          + '<img src="' + escapeHtml(c.url) + '" alt="' + escapeHtml(c.fname) + '" loading="lazy" onerror="' + onerr + '">'
+          + '</div>'
+          + '<div class="meta"><div class="who">' + av + nameLine + '</div>'
+          + whenLine
+          + '<div class="fileline" title="' + escapeHtml(c.fname) + '">' + escapeHtml(c.fname) + (c.size ? ' · ' + c.size : '') + '</div>'
+          + '</div></div>';
+      }
+
+      if (c.type === 'file') {
+        const inner = '<span class="ficon">' + escapeHtml(c.ext.slice(0,4)) + '</span>'
+          + '<span class="ftxt"><span class="fname">' + escapeHtml(c.fname) + '</span>'
+          + '<span class="fsub">' + (c.size ? c.size + ' · ' : '') + '点击下载 ↗</span></span>';
+        const head = c.url
+          ? '<a class="filecard" href="' + escapeHtml(c.url) + '" target="_blank" rel="noopener">' + inner + '</a>'
+          : '<div class="filecard">' + inner + '</div>';
+        return '<div class="card">' + head
+          + '<div class="meta"><div class="who">' + av + nameLine + '</div>' + whenLine + '</div></div>';
+      }
+
+      // empty：无附件的提交
+      return '<div class="card">'
+        + '<div class="filecard"><span class="ficon" style="background:var(--om-cream-warm);color:var(--om-subtle)">—</span>'
+        + '<span class="ftxt"><span class="fname">未上传附件</span><span class="fsub">仅提交了信息</span></span></div>'
+        + '<div class="meta"><div class="who">' + av + nameLine + '</div>' + whenLine + '</div></div>';
+    }
+
+    // ---------- 灯箱 ----------
+    function openLightbox(i) {
+      if (!imageItems.length) return;
+      lbIndex = i;
+      updateLightbox();
+      $('lightbox').classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+    function closeLightbox() {
+      $('lightbox').classList.remove('open');
+      document.body.style.overflow = '';
+    }
+    function step(d) {
+      if (!imageItems.length) return;
+      lbIndex = (lbIndex + d + imageItems.length) % imageItems.length;
+      updateLightbox();
+    }
+    function updateLightbox() {
+      const it = imageItems[lbIndex];
+      $('lbImg').src = it.url;
+      $('lbImg').alt = it.fname;
+      $('lbCaption').innerHTML = '<b>' + escapeHtml(it.name) + '</b>　<span>' + escapeHtml(it.fname)
+        + (it.when ? ' · ' + escapeHtml(it.when) : '') + '</span>';
+      $('lbOpen').href = it.url;
+      $('lbCount').textContent = (lbIndex + 1) + ' / ' + imageItems.length;
+      const multi = imageItems.length > 1;
+      $('lbPrev').style.display = multi ? '' : 'none';
+      $('lbNext').style.display = multi ? '' : 'none';
+    }
+
+    function renderError(msg) {
+      $('taskMeta').innerHTML = '<span style="color:var(--om-danger)">数据接口连接失败</span>';
+      $('updated').textContent = '';
+      $('gallery').style.columns = 'auto';
+      $('gallery').innerHTML = '<div class="state error"><div class="ticon">⚠️</div>'
+        + '<h3>无法加载作品</h3>'
+        + '<p>' + escapeHtml(msg) + '<br><span style="font-size:12px;color:var(--om-subtle)">'
+        + '请确认接口 <code>' + escapeHtml(API) + '</code> 可访问，且已允许跨域（CORS）。</span></p>'
+        + '<button class="retry" type="button" onclick="load()">重新加载</button></div>';
+    }
+
+    // events
+    $('refreshBtn').addEventListener('click', load);
+    $('lbClose').addEventListener('click', closeLightbox);
+    $('lbPrev').addEventListener('click', () => step(-1));
+    $('lbNext').addEventListener('click', () => step(1));
+    $('lightbox').addEventListener('click', (e) => { if (e.target === $('lightbox')) closeLightbox(); });
+    document.addEventListener('keydown', (e) => {
+      if (!$('lightbox').classList.contains('open')) return;
+      if (e.key === 'Escape') closeLightbox();
+      else if (e.key === 'ArrowLeft') step(-1);
+      else if (e.key === 'ArrowRight') step(1);
+    });
+
+    load();
+  </script>
+</body>
+</html>

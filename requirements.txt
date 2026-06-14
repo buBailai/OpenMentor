@@ -16,3 +16,15 @@ Pillow>=10.0.0
 pillow-heif>=0.16.0
 openpyxl>=3.0.0
 xlrd>=2.0.0
+# 简繁切换（OpenCC 词组级转换，纯 Python 实现）
+opencc-python-reimplemented>=0.1.7
+# AI 回复朗读（Edge TTS，免费微软在线音色）
+edge-tts>=6.1.0
+# 生产级 WSGI 服务器（未安装时自动回退 Flask 开发服务器）
+waitress>=3.0.0
+# 掌上讲台 App 锁屏推送（APNs 走 HTTP/2 + ES256 JWT；未配推送密钥时只装不用）
+httpx[http2]>=0.27.0
+PyJWT>=2.8.0
+cryptography>=42.0.0
+# 下课一键总结的热词分词（可选；未安装时总结卡片省略热词栏）
+jieba>=0.42.1
