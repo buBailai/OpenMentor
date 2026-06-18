@@ -76,6 +76,10 @@
                                 {% elif not assistant and ai_config and ai_config.selected_model == key %}selected
                                 {% endif %}>{{ cap.label }}{% if cap.image_input %} · 支持图片{% endif %}{% if cap.image_generation %} · 支持图生{% endif %}</option>
                             {% endfor %}
+                            {% for opt in campus_shared_options or [] %}
+                            <option value="{{ opt.key }}"
+                                {% if assistant and assistant.selected_model_name == opt.key %}selected{% endif %}>{{ opt.label }}{% if opt.image_input %} · 支持图片{% endif %}{% if opt.image_generation %} · 支持图生{% endif %}</option>
+                            {% endfor %}
                         </select>
                         <div class="form-text text-muted">需先在「个人设置」中配置对应 API Key。不同助学可使用不同模型。</div>
                     </div>

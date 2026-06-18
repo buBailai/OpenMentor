@@ -137,6 +137,10 @@
                                     <option value="siliconflow" {% if ai_config and ai_config.selected_model == 'siliconflow' %}selected{% endif %}>硅基流动</option>
                                     <option value="cherry" {% if ai_config and ai_config.selected_model == 'cherry' %}selected{% endif %}>Cherry Studio 企业版</option>
                                     <option value="ollama" {% if ai_config and ai_config.selected_model == 'ollama' %}selected{% endif %}>Ollama (本地)</option>
+                                    <option value="custom" {% if ai_config and ai_config.selected_model == 'custom' %}selected{% endif %}>自定义 API (OpenAI 兼容)</option>
+                                    {% for opt in campus_shared_options or [] %}
+                                    <option value="{{ opt.key }}" {% if ai_config and ai_config.selected_model == opt.key %}selected{% endif %}>{{ opt.label }}</option>
+                                    {% endfor %}
                                 </select>
                                 <div class="mt-2 om-model-help-row" id="apply-key-row">
                                     <a id="apply-key-btn" href="#" target="_blank" rel="noopener"
@@ -294,6 +298,51 @@
                                 </div>
                                 <button type="button" class="btn btn-info mt-2 test-api-key" data-model="ollama" data-api-url-field="ollama_api_url" data-model-field="ollama_model" class="btn btn-primary">测试连接</button>
                             </div>
+
+                            <div id="custom_config" class="model-config">
+                                <h5 class="mt-4 mb-3" style="color: #141413; font-weight: 600;">自定义 API (OpenAI 兼容) 配置</h5>
+                                <div class="form-group">
+                                    <label for="custom_api_url" style="font-weight: 600; color: #141413;">Base URL</label>
+                                    <input type="text" class="form-control" id="custom_api_url" name="custom_api_url" value="{{ model_configs_dict['custom'].api_url if model_configs_dict.get('custom') and model_configs_dict.get('custom').api_url else '' }}" placeholder="如 https://api.openai.com/v1" style="border: 1px solid #C9C3B8; border-radius: 6px; padding: 0.625rem 0.875rem;">
+                                    <small class="form-text text-muted" style="color: #6B6760;">填到 <code>/v1</code> 为止即可，系统会自动拼接 <code>/chat/completions</code> 与 <code>/images/generations</code>。支持任何 OpenAI 兼容服务（OpenAI、Kimi、各类中转 / 聚合 API、本地 vLLM 等）。</small>
+                                </div>
+                                <div class="form-group mt-2">
+                                    <label for="custom_api_key" style="font-weight: 600; color: #141413;">API Key</label>
+                                    <input type="password" class="form-control api-key-input" id="custom_api_key" name="custom_api_key" value="{{ model_configs_dict['custom'].api_key if model_configs_dict.get('custom') else '' }}" style="border: 1px solid #C9C3B8; border-radius: 6px; padding: 0.625rem 0.875rem;">
+                                    <small class="form-text text-muted" style="color: #6B6760;">你所用 OpenAI 兼容服务提供的密钥</small>
+                                </div>
+                                <div class="form-group mt-2">
+                                    <label for="custom_model" style="font-weight: 600; color: #141413;">对话模型名称</label>
+                                    <input type="text" class="form-control" id="custom_model" name="custom_model" value="{{ model_configs_dict['custom'].extra_settings if model_configs_dict.get('custom') else '' }}" placeholder="如 gpt-4o-mini、deepseek-chat、moonshot-v1-8k" style="border: 1px solid #C9C3B8; border-radius: 6px; padding: 0.625rem 0.875rem;">
+                                    <small class="form-text text-muted om-model-id-help">填你的服务实际可用的模型 ID。</small>
+                                </div>
+                                <div class="form-group mt-2">
+                                    <label for="custom_image_gen_model" style="font-weight: 600; color: #141413;"><i class="bi bi-magic"></i> 图片生成模型（非必填，独立于对话模型）</label>
+                                    <input type="text" class="form-control" id="custom_image_gen_model" name="custom_image_gen_model" value="{{ model_configs_dict['custom'].image_gen_model if model_configs_dict.get('custom') and model_configs_dict.get('custom').image_gen_model else '' }}" placeholder="如 gpt-image-1，留空则不开启图片生成" style="border: 1px solid #C9C3B8; border-radius: 6px; padding: 0.625rem 0.875rem;">
+                                    <small class="form-text text-muted om-model-id-help">需该服务支持 OpenAI 的 <code>/v1/images/generations</code> 接口，模型 ID 以其文档为准。</small>
+                                </div>
+                                <button type="button" class="btn btn-info mt-2 test-api-key" data-model="custom" data-api-key-field="custom_api_key" data-api-url-field="custom_api_url" data-model-field="custom_model" class="btn btn-primary">测试API密钥</button>
+                            </div>
+
+                            {% if om_is_campus_admin %}
+                            <div class="form-group mt-4" style="background:#F7F4EC;border:1px solid #E5E0D8;border-radius:8px;padding:14px 16px;">
+                                <label style="font-weight:600;color:#141413;display:block;margin-bottom:6px;">🏫 全校统一 API 共享</label>
+                                <small class="form-text text-muted" style="color:#6B6760;display:block;margin-bottom:10px;">勾选你要分享给全校老师的厂商（仅列出已配置 Key 的），再打开下面的总开关即可生效。老师会在「选择 AI 模型」及每个 AI 导师的模型选择里看到这些「🏫 学校统一 · 厂商」，直接用你配置的 Key；老师自己的配置不受影响。未勾选的、或关闭开关后，老师都看不到。</small>
+                                {% for opt in admin_share_candidates or [] %}
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="share_provider" value="{{ opt.key }}" id="share_prov_{{ opt.key }}" {% if opt.key in shared_providers_list %}checked{% endif %}>
+                                    <label class="form-check-label" for="share_prov_{{ opt.key }}" style="color:#141413;">{{ opt.label }}</label>
+                                </div>
+                                {% endfor %}
+                                {% if not admin_share_candidates %}
+                                <div class="text-muted" style="font-size:0.85rem;">（还没有已配置 Key 的厂商，请先在上面配好至少一个厂商并保存，再回来勾选分享。）</div>
+                                {% endif %}
+                                <div class="form-check form-switch mt-3" style="border-top:1px solid #E5E0D8;padding-top:10px;">
+                                    <input class="form-check-input" type="checkbox" id="share_to_campus" name="share_to_campus" {% if ai_config and ai_config.share_to_campus %}checked{% endif %}>
+                                    <label class="form-check-label" for="share_to_campus" style="font-weight:600;color:#141413;">启用全校共享（打开后，上面勾选的厂商对全校老师可见）</label>
+                                </div>
+                            </div>
+                            {% endif %}
 
                             <button type="submit" class="btn btn-success mt-4" style="font-weight: 500; background-color: #5B7553; border: none; border-radius: 6px; padding: 0.625rem 1.5rem;">保存配置</button>
                             
@@ -459,11 +508,17 @@
 
     function updateApplyKeyButton(model) {
         const cfg = APPLY_KEY_LINKS[model];
+        const row = document.getElementById('apply-key-row');
         const btn = document.getElementById('apply-key-btn');
         const txt = document.getElementById('apply-key-btn-text');
         const hint = document.getElementById('apply-key-hint');
         const videoBtn = document.getElementById('model-video-btn');
-        if (!cfg) return;
+        // 自定义 API / 学校统一 API 没有申请链接：整行隐藏，避免残留上一个厂商的跳转按钮
+        if (!cfg) {
+            if (row) row.style.display = 'none';
+            return;
+        }
+        if (row) row.style.display = '';
         btn.href = cfg.url;
         txt.textContent = cfg.label;
         hint.textContent = cfg.hint;
@@ -515,6 +570,7 @@
         document.getElementById('siliconflow_config').style.display = model === 'siliconflow' ? 'block' : 'none';
         document.getElementById('cherry_config').style.display = model === 'cherry' ? 'block' : 'none';
         document.getElementById('ollama_config').style.display = model === 'ollama' ? 'block' : 'none';
+        document.getElementById('custom_config').style.display = model === 'custom' ? 'block' : 'none';
         updateApplyKeyButton(model);
     });
 
@@ -527,6 +583,7 @@
     document.getElementById('siliconflow_config').style.display = selectedModel === 'siliconflow' ? 'block' : 'none';
     document.getElementById('cherry_config').style.display = selectedModel === 'cherry' ? 'block' : 'none';
     document.getElementById('ollama_config').style.display = selectedModel === 'ollama' ? 'block' : 'none';
+    document.getElementById('custom_config').style.display = selectedModel === 'custom' ? 'block' : 'none';
     updateApplyKeyButton(selectedModel);
     
     // API密钥测试功能

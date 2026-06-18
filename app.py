@@ -781,6 +781,8 @@ class AIConfig(Base):
     user_id = Column(Integer, ForeignKey('user.id'), unique=True)
     user = relationship('User', back_populates='ai_config')
     selected_model = Column(String(50), default='deepseek')
+    share_to_campus = Column(Boolean, default=False)  # 校园版：管理员把自己配置的 AI 共享给全校老师（总开关）
+    shared_providers = Column(Text)  # 校园版：管理员勾选要分享的厂商代号，逗号分隔（如 'deepseek,custom'）
     model_configs = relationship('AIModelConfig', back_populates='ai_config', cascade='all, delete-orphan')
 
 class AIModelConfig(Base):
@@ -1153,6 +1155,11 @@ def migrate_database():
             ('allow_call_teacher', "BOOLEAN DEFAULT 0"),
             ('template_key', "VARCHAR(50)"),
             ('pinned', "BOOLEAN DEFAULT 0"),
+        ]))
+    if 'ai_config' in table_names:
+        plans.append(('ai_config', [
+            ('share_to_campus', "BOOLEAN DEFAULT 0"),
+            ('shared_providers', "TEXT"),
         ]))
     if 'ai_model_config' in table_names:
         plans.append(('ai_model_config', [
@@ -1531,10 +1538,36 @@ def _cherry_chat_url(api_url):
     return _cherry_api_base(api_url) + '/chat/completions'
 
 
+def _custom_api_base(api_url):
+    """自定义 OpenAI 兼容 API 的 base 规范化（以 /v1 结尾）。
+    与 cherry 不同：不回退任何默认地址，未填写则返回空串（由调用方报错）。
+    兼容 https://host / https://host/v1 / http://ip:port 三种填法。"""
+    base = (api_url or '').strip()
+    if not base:
+        return ''
+    if not base.startswith('http'):
+        base = 'http://' + base
+    base = base.rstrip('/')
+    if not base.endswith('/v1'):
+        base += '/v1'
+    return base
+
+
 def call_ai_model(prompt, ai_config):
     """
     调用AI模型生成分析报告
     """
+    # 校园版「学校统一 API」：老师选了 school:<厂商> → 改用管理员共享配置
+    if (getattr(ai_config, 'selected_model', '') or '').startswith('school:'):
+        _sdb = SessionLocal()
+        try:
+            _real, _adm_mc = _resolve_school_model(ai_config.selected_model, _sdb)
+        finally:
+            _sdb.close()
+        if _adm_mc is None:
+            raise Exception('学校统一 API 未启用或管理员未配置该模型')
+        ai_config = _EffectiveAIConfig([_adm_mc], _real)
+
     def get_model_config(model_name):
         for mc in ai_config.model_configs:
             if mc.model_name == model_name:
@@ -1759,6 +1792,40 @@ def call_ai_model(prompt, ai_config):
         except Exception as e:
             logger.error(f"Cherry Studio 企业版 API 调用失败: {str(e)}")
             raise Exception(f"Cherry Studio 企业版 API 调用失败: {str(e)}")
+
+    elif ai_config.selected_model == 'custom':
+        model_cfg = get_model_config('custom')
+        api_key = model_cfg.api_key if model_cfg else ''
+        model_name = (model_cfg.extra_settings or '').strip() if model_cfg else ''
+        base = _custom_api_base(model_cfg.api_url if model_cfg else '')
+        if not base:
+            raise Exception("自定义 API 调用失败：未配置 Base URL")
+        if not model_name:
+            raise Exception("自定义 API 调用失败：未配置模型名称")
+        url = base + '/chat/completions'
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+        data = {
+            "model": model_name,
+            "messages": [
+                {"role": "system", "content": "你是一个专业的数据分析助手。请基于用户提供的数据，生成一份详细、专业、有洞察力的分析报告。"},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.7,
+            "max_tokens": 4000
+        }
+        try:
+            logger.info(f"调用自定义 API，URL: {url}, 模型: {model_name}")
+            response = requests.post(url, headers=headers, json=data, timeout=120)
+            if response.status_code != 200:
+                raise Exception(f"返回 {response.status_code}: {response.text[:200]}")
+            result = response.json()
+            return result["choices"][0]["message"]["content"]
+        except Exception as e:
+            logger.error(f"自定义 API 调用失败: {str(e)}")
+            raise Exception(f"自定义 API 调用失败: {str(e)}")
 
     elif ai_config.selected_model == 'ollama':
         model_cfg = get_model_config('ollama')
@@ -3538,6 +3605,11 @@ def profile():
                 else:
                     ai_config.selected_model = selected_model
 
+                # 校园版：仅管理员可设置「全校共享」开关 + 勾选要分享的厂商
+                if is_campus_edition() and is_admin_user(current_user):
+                    ai_config.share_to_campus = (request.form.get('share_to_campus') == 'on')
+                    ai_config.shared_providers = ','.join(request.form.getlist('share_provider'))
+
                 # OpenMentor: 改用 UPSERT 语义（不再先 DELETE 再重建）
                 # 防御性：若表单中某字段为空字符串，保留 DB 中已有值
                 #   - 这样即使部分提交（比如脚本/测试只填一部分），不会误清空其他模型的 Key
@@ -3558,6 +3630,7 @@ def profile():
                     ('siliconflow', request.form.get('siliconflow_api_key', ''), '', request.form.get('siliconflow_model', 'Qwen/Qwen2.5-72B-Instruct').strip(), request.form.get('siliconflow_image_gen_model', '').strip(), ''),
                     ('cherry',      request.form.get('cherry_api_key', ''),      request.form.get('cherry_api_url', '').strip(), request.form.get('cherry_model', '').strip(), request.form.get('cherry_image_gen_model', '').strip(), ''),
                     ('ollama',      '', request.form.get('ollama_api_url', 'http://localhost:11434'), request.form.get('ollama_model', 'llama3.2').strip(), '', ''),
+                    ('custom',      request.form.get('custom_api_key', ''),      request.form.get('custom_api_url', '').strip(), request.form.get('custom_model', '').strip(), request.form.get('custom_image_gen_model', '').strip(), ''),
                 ]
 
                 for model_name, api_key_in, api_url_in, extra_in, image_gen_in, video_gen_in in model_configs:
@@ -3649,11 +3722,25 @@ def profile():
 
         qf_config = db.query(QFConfig).filter_by(user_id=current_user.id).first()
 
+        # 校园版：管理员可分享的厂商候选（已配 key 的）
+        admin_share_candidates = []
+        if is_campus_edition() and is_admin_user(current_user):
+            for prov, mc in model_configs_dict.items():
+                if prov not in MODEL_CAPABILITIES:
+                    continue
+                has_key = bool((mc.api_key or '').strip()) or (prov == 'ollama' and bool((mc.api_url or '').strip()))
+                if has_key:
+                    admin_share_candidates.append({'key': prov, 'label': MODEL_CAPABILITIES[prov]['label']})
+        shared_providers_list = [p for p in ((ai_config.shared_providers or '').split(',') if ai_config else []) if p]
+
         return render_template(
             'profile.html',
             user=current_user,
             ai_config=ai_config,
             model_configs_dict=model_configs_dict,
+            campus_shared_options=_campus_shared_model_options(db),
+            admin_share_candidates=admin_share_candidates,
+            shared_providers_list=shared_providers_list,
             qf_config=qf_config,
             next_page=next_page if _is_safe_next_url(next_page) else '',
         )
@@ -4466,7 +4553,111 @@ MODEL_CAPABILITIES = {
     'siliconflow': {'image_input': True,  'image_generation': True,  'label': '硅基流动'},
     'cherry':      {'image_input': True,  'image_generation': True,  'label': 'Cherry Studio 企业版'},
     'ollama':      {'image_input': False, 'image_generation': False, 'label': 'Ollama 本地'},
+    'custom':      {'image_input': True,  'image_generation': True,  'label': '自定义 (OpenAI 兼容)'},
 }
+
+
+# ============ 校园版「全校统一 API」共享 ============
+# 管理员在自己的 AI 配置页配好多厂商（含自定义）后，打开 AIConfig.share_to_campus 开关，
+# 全校老师即可在模型下拉里选「🏫 学校统一 · <厂商>」(model_key 形如 'school:custom')。
+# 调用时把 school:<厂商> 解析成管理员账号下该厂商的配置（key/endpoint），老师自己的配置不受影响。
+
+class _SharedModelCfg:
+    """管理员共享模型配置的脱离会话快照，避免 DetachedInstanceError。
+    携带下游用到的全部标量字段（含 id，调用方有 captured['model_cfg_id']=model_cfg.id）。"""
+    def __init__(self, mc):
+        self.id = mc.id
+        self.ai_config_id = getattr(mc, 'ai_config_id', None)
+        self.model_name = mc.model_name
+        self.api_key = mc.api_key
+        self.api_url = mc.api_url
+        self.extra_settings = mc.extra_settings
+        self.image_gen_model = mc.image_gen_model
+        self.video_gen_model = getattr(mc, 'video_gen_model', None)
+
+
+class _EffectiveAIConfig:
+    """给 call_ai_model 用的等效配置（仅需 model_configs + selected_model）。"""
+    def __init__(self, model_configs, selected_model):
+        self.model_configs = model_configs
+        self.selected_model = selected_model
+
+
+def _real_provider_key(model_key):
+    """'school:custom' → 'custom'；普通 key 原样返回。"""
+    mk = model_key or ''
+    return mk.split(':', 1)[1] if mk.startswith('school:') else mk
+
+
+def _get_campus_shared_admin_config(db):
+    """返回开启了全校共享的管理员 AIConfig（校园版 + 某 admin 打开开关），否则 None。"""
+    if not is_campus_edition():
+        return None
+    admin = db.query(User).filter(User.role == 'admin').order_by(User.id.asc()).first()
+    if not admin:
+        return None
+    cfg = db.query(AIConfig).filter_by(user_id=admin.id).first()
+    if cfg and bool(getattr(cfg, 'share_to_campus', False)):
+        return cfg
+    return None
+
+
+def _resolve_school_model(model_key, db):
+    """'school:<prov>' → (真实厂商, 管理员该厂商配置的快照_SharedModelCfg 或 None)。
+    非 school 返回 (None, None)。"""
+    if not (model_key or '').startswith('school:'):
+        return None, None
+    real = _real_provider_key(model_key)
+    cfg = _get_campus_shared_admin_config(db)
+    if not cfg:
+        return real, None
+    shared = [p for p in (cfg.shared_providers or '').split(',') if p]
+    if real not in shared:  # 只有管理员勾选分享的厂商才放行
+        return real, None
+    for mc in cfg.model_configs:
+        if mc.model_name == real:
+            return real, _SharedModelCfg(mc)
+    return real, None
+
+
+def _campus_shared_model_options(db):
+    """老师可见的「学校统一」下拉项（管理员已配且有 key 的厂商）。"""
+    cfg = _get_campus_shared_admin_config(db)
+    if not cfg:
+        return []
+    shared = [p for p in (cfg.shared_providers or '').split(',') if p]
+    opts = []
+    for mc in cfg.model_configs:
+        prov = mc.model_name
+        if prov not in MODEL_CAPABILITIES:
+            continue
+        if prov not in shared:  # 只列管理员勾选分享的厂商
+            continue
+        has_key = bool((mc.api_key or '').strip()) or (prov == 'ollama' and bool((mc.api_url or '').strip()))
+        if not has_key:
+            continue
+        cap = MODEL_CAPABILITIES.get(prov, {})
+        opts.append({
+            'key': 'school:' + prov,
+            'provider': prov,
+            'label': '🏫 学校统一 · ' + cap.get('label', prov),
+            'image_input': bool(cap.get('image_input')),
+            'image_generation': bool((mc.image_gen_model or '').strip()) and bool(cap.get('image_generation')),
+        })
+    return opts
+
+
+def _assistant_provider_and_config(db, assistant):
+    """返回 (真实厂商 key, 对应 AIConfig)。
+    校园版「学校统一 API」(selected_model_name 形如 school:<厂商>) → 真实厂商 + 管理员共享 AIConfig；
+    否则 → 该厂商 + 老师本人 AIConfig。"""
+    raw = assistant.selected_model_name or ''
+    provider_key = _real_provider_key(raw)
+    if raw.startswith('school:'):
+        ai_cfg = _get_campus_shared_admin_config(db)
+    else:
+        ai_cfg = db.query(AIConfig).filter_by(user_id=assistant.user_id).first()
+    return provider_key, ai_cfg
 
 # 图片生成 API 配置：
 # - OpenAI 兼容（同步）：豆包 / GLM / SiliconFlow → POST /v1/images/generations
@@ -4502,6 +4693,13 @@ IMAGE_GEN_PROVIDERS = {
         'wanx_submit_url': 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis',
         'qwen_image_submit_url': 'https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation',
         'default_model': 'qwen-image',
+    },
+    'custom': {
+        # URL 动态：用老师填的 Base URL（_custom_api_base）+ /images/generations
+        # 网关后面模型五花八门，不传 size/n，由网关用默认值
+        'mode': 'openai',
+        'url': None,
+        'default_model': 'gpt-image-1',
     },
 }
 
@@ -4806,6 +5004,7 @@ def assistant_create():
             assistant=None,
             ai_config=ai_config,
             model_capabilities=MODEL_CAPABILITIES,
+            campus_shared_options=_campus_shared_model_options(db),
             blocked_keywords=DEFAULT_BLOCKED_KEYWORDS,
             default_link_hours=48,
         )
@@ -4880,6 +5079,7 @@ def assistant_edit(assistant_id):
             assistant=assistant,
             ai_config=ai_config,
             model_capabilities=MODEL_CAPABILITIES,
+            campus_shared_options=_campus_shared_model_options(db),
             blocked_keywords=_load_blocked_keywords(assistant.blocked_keywords),
             default_link_hours=48,
         )
@@ -4926,6 +5126,7 @@ def assistant_detail(assistant_id):
             is_expired=is_expired,
             student_url=student_url,
             model_capabilities=MODEL_CAPABILITIES,
+            campus_shared_options=_campus_shared_model_options(db),
             kb_docs=kb_docs,
             kb_enabled=kb_enabled,
         )
@@ -5365,7 +5566,14 @@ def _stream_report_sse(meta_prompt, ai_config, meta_event_payload, persist_facto
     # 找出当前选中的模型
     model_key = (ai_config.selected_model or '').strip() if ai_config else ''
     model_cfg = None
-    if ai_config:
+    if model_key.startswith('school:'):
+        # 校园版「学校统一 API」
+        _sdb = SessionLocal()
+        try:
+            model_key, model_cfg = _resolve_school_model(model_key, _sdb)
+        finally:
+            _sdb.close()
+    elif ai_config:
         model_cfg = next((mc for mc in ai_config.model_configs if mc.model_name == model_key), None)
 
     full_chunks = []
@@ -8339,6 +8547,9 @@ def _get_assistant_model_config(db, assistant):
     if not ai_config:
         return None, None
     model_key = assistant.selected_model_name or ai_config.selected_model or 'deepseek'
+    if (model_key or '').startswith('school:'):
+        # 校园版「学校统一 API」：解析成管理员共享配置（返回真实厂商 key + 管理员该厂商配置）
+        return _resolve_school_model(model_key, db)
     for mc in ai_config.model_configs:
         if mc.model_name == model_key:
             return model_key, mc
@@ -8853,6 +9064,30 @@ def _stream_assistant_response(model_key, model_cfg, messages, extra_payload=Non
         }
         payload = {
             'model': custom_model or CHERRY_DEFAULT_MODEL,
+            'messages': messages,
+            'temperature': 0.7,
+            'stream': True,
+        }
+        if extra_payload:
+            payload.update(extra_payload)
+        yield from _stream_openai_compatible(url, headers, payload)
+    elif model_key == 'custom':
+        api_key = (model_cfg.api_key or '').strip() if model_cfg else ''
+        if not api_key:
+            raise RuntimeError('未配置自定义 API 的 API Key，请联系老师在「个人设置」中补充。')
+        base = _custom_api_base(model_cfg.api_url if model_cfg else '')
+        if not base:
+            raise RuntimeError('未配置自定义 API 的 Base URL，请联系老师在「个人设置」中补充。')
+        custom_model = (model_cfg.extra_settings or '').strip() if model_cfg else ''
+        if not custom_model:
+            raise RuntimeError('未配置自定义 API 的模型名称，请联系老师在「个人设置」中补充。')
+        url = base + '/chat/completions'
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {api_key}',
+        }
+        payload = {
+            'model': custom_model,
             'messages': messages,
             'temperature': 0.7,
             'stream': True,
@@ -9600,7 +9835,7 @@ def chat_entry(task_id):
         member_name = _get_group_member_name(task_id) if is_group else ''
         if conv and not conv.is_blocked and (not is_group or member_name):
             # 已有身份 → 进入聊天室（小组模式还需要组员姓名 cookie，缺失则重新填写）
-            cap = MODEL_CAPABILITIES.get(assistant.selected_model_name or '', {})
+            cap = MODEL_CAPABILITIES.get(_real_provider_key(assistant.selected_model_name or ''), {})
             return render_template(
                 'chat_room.html',
                 assistant=assistant,
@@ -9840,10 +10075,10 @@ def api_chat_history(task_id):
             })
 
         # 助学多模态能力（前端用于决定是否显示按钮）
-        # 图片生成能力 = 助学开关 + 提供商支持 + 老师在 image_gen_model 实际填了模型名
-        provider_key = assistant.selected_model_name or ''
+        # 图片生成能力 = 助学开关 + 提供商支持 + image_gen_model 实际填了模型名
+        # 校园版「学校统一 API」→ provider_key 取真实厂商、ai_cfg 取管理员共享配置
+        provider_key, ai_cfg = _assistant_provider_and_config(db, assistant)
         cap = MODEL_CAPABILITIES.get(provider_key, {})
-        ai_cfg = db.query(AIConfig).filter_by(user_id=assistant.user_id).first()
         image_gen_configured = False
         if ai_cfg and provider_key in IMAGE_GEN_PROVIDERS:
             for mc in ai_cfg.model_configs:
@@ -10274,7 +10509,7 @@ def api_chat_upload(task_id):
                 if not assistant.allow_image_input:
                     logger.warning(f'[上传被拒] 助学未开启图片上传')
                     return jsonify({'code': 403, 'message': '该 AI 导师未开启图片上传'}), 403
-                cap = MODEL_CAPABILITIES.get(assistant.selected_model_name or '', {})
+                cap = MODEL_CAPABILITIES.get(_real_provider_key(assistant.selected_model_name or ''), {})
                 if not cap.get('image_input'):
                     logger.warning(f'[上传被拒] 模型 {assistant.selected_model_name!r} 不支持视觉')
                     return jsonify({'code': 403, 'message': '当前模型不支持图片理解，请联系老师切换模型'}), 403
@@ -10600,6 +10835,14 @@ def _generate_image(provider_key, model_cfg, prompt, conv_id, size=None):
         gen_url = _cherry_api_base(model_cfg.api_url) + '/images/generations'
         payload.pop('size', None)
         payload.pop('n', None)
+    elif provider_key == 'custom':
+        # 自定义 OpenAI 兼容网关：用老师填的 Base URL，size/n 交给网关默认值
+        base = _custom_api_base(model_cfg.api_url)
+        if not base:
+            return None, '未配置自定义 API 的 Base URL'
+        gen_url = base + '/images/generations'
+        payload.pop('size', None)
+        payload.pop('n', None)
     logger.info(f'[图生请求] provider={provider_key}, model={image_model}, size={payload.get("size", "默认")}, prompt={prompt[:80]}')
 
     try:
@@ -10669,7 +10912,7 @@ def api_chat_generate_image(task_id):
         if not assistant.allow_image_generation:
             return jsonify({'code': 403, 'message': '该 AI 导师未开启图片生成'}), 403
 
-        provider_key = assistant.selected_model_name or ''
+        provider_key, ai_cfg = _assistant_provider_and_config(db, assistant)
         cap = MODEL_CAPABILITIES.get(provider_key, {})
         if not cap.get('image_generation'):
             return jsonify({'code': 403, 'message': f'当前模型（{provider_key}）暂不支持图片生成'}), 403
@@ -10714,8 +10957,7 @@ def api_chat_generate_image(task_id):
                 'daily_limit': limit,
             })
 
-        # 取老师的 model_cfg
-        ai_cfg = db.query(AIConfig).filter_by(user_id=assistant.user_id).first()
+        # 取 model_cfg（ai_cfg 已按 学校统一 API / 老师本人 解析好）
         model_cfg = None
         if ai_cfg:
             for mc in ai_cfg.model_configs:
@@ -10790,7 +11032,7 @@ def api_chat_generate_video(task_id):
 
         if not assistant.allow_video_generation:
             return jsonify({'code': 403, 'message': '该 AI 导师未开启视频生成'}), 403
-        provider_key = assistant.selected_model_name or ''
+        provider_key = _real_provider_key(assistant.selected_model_name or '')
         cap = MODEL_CAPABILITIES.get(provider_key, {})
         if not cap.get('video_generation') or provider_key not in VIDEO_GEN_PROVIDERS:
             return jsonify({'code': 403, 'message': f'当前模型（{provider_key}）暂不支持视频生成'}), 403
@@ -10905,7 +11147,7 @@ def api_chat_video_task(task_id, gen_task_id):
         if info['done']:
             return jsonify(info['result'])
 
-        provider_key = assistant.selected_model_name or ''
+        provider_key = _real_provider_key(assistant.selected_model_name or '')
         prov = VIDEO_GEN_PROVIDERS.get(provider_key)
         ai_cfg = db.query(AIConfig).filter_by(user_id=assistant.user_id).first()
         model_cfg = None
