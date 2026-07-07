@@ -113,6 +113,11 @@
                     <li class="nav-item">
                         <a class="nav-link" id="password-tab" data-bs-toggle="tab" href="#password">用户信息修改</a>
                     </li>
+                    {% if user.role == 'admin' %}
+                    <li class="nav-item">
+                        <a class="nav-link" id="update-tab" data-bs-toggle="tab" href="#update">检查更新</a>
+                    </li>
+                    {% endif %}
                     {% if not om_is_campus %}
                     <li class="nav-item">
                         <a class="nav-link" id="init-tab" data-bs-toggle="tab" href="#init">系统初始化</a>
@@ -440,6 +445,43 @@
                         </div>
                     </div>
                     
+                    <!-- 在线更新标签页 -->
+                    {% if user.role == 'admin' %}
+                    <div class="tab-pane fade" id="update">
+                        <div class="card mb-3" style="border: 1px solid #E5E0D8; border-radius: 8px;">
+                            <div class="card-body" style="padding: 1.5rem;">
+                                <div class="d-flex align-items-center justify-content-between flex-wrap" style="gap: 0.75rem;">
+                                    <div>
+                                        <h6 style="font-weight: 600; color: #141413; margin-bottom: 0.35rem;">在线更新</h6>
+                                        <div class="small text-muted">当前版本 <strong id="upd-current">v{{ om_version }}</strong> · <span id="upd-channel">—</span></div>
+                                    </div>
+                                    <button type="button" id="upd-check-btn" class="btn" style="background:#141413;color:#fff;font-weight:500;border-radius:8px;padding:0.5rem 1.25rem;">检查更新</button>
+                                </div>
+
+                                <div id="upd-result" class="mt-3" style="display:none;"></div>
+
+                                <div id="upd-progress-wrap" class="mt-3" style="display:none;">
+                                    <div style="height:8px;background:#EFEBE3;border-radius:6px;overflow:hidden;">
+                                        <div id="upd-progress-bar" style="height:100%;width:0%;background:#5B7553;transition:width .3s;"></div>
+                                    </div>
+                                    <div id="upd-progress-msg" class="small text-muted mt-1">—</div>
+                                </div>
+
+                                <div class="mt-3" style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                                    <button type="button" id="upd-download-btn" class="btn" style="display:none;background:#3C6E47;color:#fff;font-weight:500;border-radius:8px;padding:0.5rem 1.25rem;">下载更新</button>
+                                    <button type="button" id="upd-apply-btn" class="btn" style="display:none;background:#9A6A2E;color:#fff;font-weight:500;border-radius:8px;padding:0.5rem 1.25rem;">应用更新并重启</button>
+                                </div>
+
+                                <div class="alert alert-light mt-3 mb-0 small" style="border:1px solid #E5E0D8;border-radius:8px;color:#6B6760;">
+                                    <i class="bi bi-shield-check"></i>
+                                    更新只替换程序代码，<strong>绝不会动</strong>你的数据库、AI 配置、学生上传的附件与生成的图片、语音缓存。被替换的旧版会自动备份到 <code>backups/</code> 可回滚。
+                                    <span id="upd-managed-note"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
                     <!-- 系统初始化标签页 -->
                     {% if not om_is_campus %}
                     <div class="tab-pane fade" id="init">
@@ -719,5 +761,93 @@
             this.disabled = false;
         }
     });
+
+    // ==================== 在线更新（管理员） ====================
+    (function setupUpdate() {
+        const checkBtn = document.getElementById('upd-check-btn');
+        if (!checkBtn) return;   // 非管理员页面没有此标签
+        const result = document.getElementById('upd-result');
+        const dlBtn = document.getElementById('upd-download-btn');
+        const applyBtn = document.getElementById('upd-apply-btn');
+        const progWrap = document.getElementById('upd-progress-wrap');
+        const progBar = document.getElementById('upd-progress-bar');
+        const progMsg = document.getElementById('upd-progress-msg');
+        const channelEl = document.getElementById('upd-channel');
+        const managedNote = document.getElementById('upd-managed-note');
+        let managed = true;
+
+        function box(html, kind) {
+            const c = kind === 'err' ? '#8B342E' : (kind === 'ok' ? '#3C6E47' : '#141413');
+            const bg = kind === 'err' ? '#F2DCD9' : (kind === 'ok' ? '#E6EFE3' : '#F4F1EA');
+            result.style.display = 'block';
+            result.innerHTML = `<div style="padding:0.6rem 0.85rem;background:${bg};color:${c};border-radius:8px;font-size:0.9rem;">${html}</div>`;
+        }
+
+        async function loadStatus() {
+            try {
+                const r = await fetch('/api/update/status');
+                if (!r.ok) return;
+                const d = await r.json();
+                if (channelEl) channelEl.textContent = d.channel === 'campus' ? '校园版' : '个人版';
+                managed = !!d.managed;
+                if (managedNote) managedNote.textContent = managed ? '' : '（当前为开发/源码模式，仅下载不落地。）';
+                if (d.pending) { applyBtn.style.display = 'inline-block'; box('已有下载好的新版待应用，点「应用更新并重启」即可完成升级。', 'ok'); }
+            } catch (e) {}
+        }
+
+        checkBtn.addEventListener('click', async () => {
+            checkBtn.disabled = true; const t = checkBtn.textContent; checkBtn.textContent = '检查中…';
+            dlBtn.style.display = 'none'; applyBtn.style.display = 'none';
+            try {
+                const r = await fetch('/api/update/check', { method: 'POST' });
+                const d = await r.json();
+                if (!d.ok) { box(d.msg || '检查失败', 'err'); return; }
+                if (!d.newer) { box(`已是最新版本（v${d.current}）。`, 'ok'); return; }
+                const sizeMB = d.size ? ` · 约 ${(d.size/1048576).toFixed(1)} MB` : '';
+                const notes = (d.notes || '').trim();
+                box(`发现新版本 <strong>v${d.latest}</strong>（当前 v${d.current}）${sizeMB}` +
+                    (notes ? `<div style="margin-top:0.5rem;white-space:pre-wrap;font-size:0.85rem;color:#6B6760;">${notes.replace(/</g,'&lt;')}</div>` : ''), 'info');
+                dlBtn.style.display = 'inline-block';
+            } catch (e) { box('检查失败：' + e.message, 'err'); }
+            finally { checkBtn.disabled = false; checkBtn.textContent = t; }
+        });
+
+        dlBtn.addEventListener('click', async () => {
+            dlBtn.disabled = true; progWrap.style.display = 'block'; progBar.style.width = '0%'; progMsg.textContent = '开始下载…';
+            try {
+                const r = await fetch('/api/update/download', { method: 'POST' });
+                const d = await r.json();
+                if (!d.ok) { progMsg.textContent = d.msg || '下载失败'; dlBtn.disabled = false; return; }
+                const poll = setInterval(async () => {
+                    try {
+                        const pr = await fetch('/api/update/progress'); const p = await pr.json();
+                        progBar.style.width = (p.pct || 0) + '%'; progMsg.textContent = p.msg || '';
+                        if (p.state === 'ready') { clearInterval(poll); dlBtn.style.display = 'none'; applyBtn.style.display = 'inline-block'; }
+                        else if (p.state === 'error') { clearInterval(poll); progMsg.textContent = '❌ ' + (p.msg || '下载失败'); dlBtn.disabled = false; }
+                    } catch (e) {}
+                }, 700);
+            } catch (e) { progMsg.textContent = '下载失败：' + e.message; dlBtn.disabled = false; }
+        });
+
+        applyBtn.addEventListener('click', async () => {
+            if (!confirm(managed ? '确认应用更新并重启服务？期间约 10 秒无法访问，你的数据不受影响。'
+                                 : '当前为开发模式，只会演练不会真正落地。继续？')) return;
+            applyBtn.disabled = true; const t = applyBtn.textContent; applyBtn.textContent = '正在应用…';
+            try {
+                const r = await fetch('/api/update/apply', { method: 'POST' });
+                const d = await r.json();
+                if (!d.ok) { box(d.msg || '应用失败', 'err'); applyBtn.disabled = false; applyBtn.textContent = t; return; }
+                box('✅ ' + (d.msg || '正在重启升级…') + '<br><span class="text-muted">等服务重启后本页会自动刷新。</span>', 'ok');
+                if (!managed) { applyBtn.disabled = false; applyBtn.textContent = t; return; }
+                // 轮询首页直到服务重新起来，然后刷新
+                setTimeout(function wait() {
+                    fetch('/', { cache: 'no-store' }).then(r => { if (r.ok) location.reload(); else setTimeout(wait, 1500); })
+                                                     .catch(() => setTimeout(wait, 1500));
+                }, 4000);
+            } catch (e) { box('应用失败：' + e.message, 'err'); applyBtn.disabled = false; applyBtn.textContent = t; }
+        });
+
+        loadStatus();
+    })();
 </script>
 {% endblock %}

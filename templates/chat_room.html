@@ -270,6 +270,20 @@
             50% { box-shadow: 0 0 0 10px rgba(184, 70, 62, 0); }
         }
         @keyframes om-spin { to { transform: rotate(360deg); } }
+        /* 生成弹窗里的语音麦克风（复用 btn-attach 的观感，尺寸略小） */
+        .modal-mic {
+            background: var(--om-paper); color: var(--om-muted);
+            border: 1px solid var(--om-border-strong); border-radius: 999px;
+            width: 38px; height: 38px; cursor: pointer; flex: 0 0 auto;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1rem; transition: all 0.15s ease;
+        }
+        .modal-mic:hover:not(:disabled) { border-color: var(--om-ink); color: var(--om-ink); background: var(--om-cream-warm); }
+        .modal-mic:disabled { opacity: 0.4; cursor: not-allowed; }
+        .modal-mic.recording {
+            background: #B8463E; color: #fff; border-color: #B8463E;
+            animation: om-rec-pulse 1.2s ease-in-out infinite;
+        }
         .topbar .btn-icon.raised {
             background: var(--om-clay, #D97757);
             color: #fff;
@@ -470,6 +484,10 @@
             <textarea id="gen-prompt" rows="4" maxlength="1000"
                 placeholder="例如：一只戴着眼镜的橙色小猫，正坐在书桌前看一本厚厚的数学书，水彩风格"
                 style="width: 100%; padding: 0.625rem 0.875rem; border: 1px solid #C9C3B8; border-radius: 8px; font-family: inherit; font-size: 0.95rem; line-height: 1.5; resize: vertical;"></textarea>
+            <div id="gen-voice-row" style="display: none; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
+                <button id="gen-voice" class="modal-mic" type="button" title="语音输入"><i class="bi bi-mic"></i></button>
+                <span id="gen-voice-hint" data-default="点麦克风说出想画的内容" style="font-size: 0.82rem; color: #94918B;">点麦克风说出想画的内容</span>
+            </div>
             <div id="gen-error" style="display: none; margin-top: 0.5rem; padding: 0.4rem 0.625rem; background: #F2DCD9; color: #8B342E; border-radius: 6px; font-size: 0.85rem;"></div>
             <div style="display: flex; gap: 0.5rem; margin-top: 1rem; justify-content: flex-end;">
                 <button id="gen-cancel" type="button" style="padding: 0.5rem 1rem; border: 1px solid #C9C3B8; background: white; border-radius: 8px; cursor: pointer;">取消</button>
@@ -494,6 +512,10 @@
             <textarea id="video-prompt" rows="3" maxlength="800"
                 placeholder="文生视频：描述画面（例：一只小猫在草地上奔跑，卡通风格）&#10;图生视频：描述怎么动起来（例：让画里的云慢慢飘动）"
                 style="width: 100%; padding: 0.625rem 0.875rem; border: 1px solid #C9C3B8; border-radius: 8px; font-family: inherit; font-size: 0.95rem; line-height: 1.5; resize: vertical;"></textarea>
+            <div id="video-voice-row" style="display: none; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
+                <button id="video-voice" class="modal-mic" type="button" title="语音输入"><i class="bi bi-mic"></i></button>
+                <span id="video-voice-hint" data-default="点麦克风说出想生成的画面" style="font-size: 0.82rem; color: #94918B;">点麦克风说出想生成的画面</span>
+            </div>
             <div style="font-size: 0.78rem; color: #94918B; margin-top: 0.35rem;">生成 5 秒短视频，约需半分钟，请耐心等待</div>
             <div id="video-error" style="display: none; margin-top: 0.5rem; padding: 0.4rem 0.625rem; background: #F2DCD9; color: #8B342E; border-radius: 6px; font-size: 0.85rem;"></div>
             <div style="display: flex; gap: 0.5rem; margin-top: 1rem; justify-content: flex-end;">
@@ -768,6 +790,11 @@
             btnFile.style.display = capabilities.file_upload ? 'flex' : 'none';
             btnGenerate.style.display = capabilities.image_generation ? 'flex' : 'none';
             document.getElementById('btn-video').style.display = capabilities.video_generation ? 'flex' : 'none';
+            // 生成弹窗里的语音输入：开启了语音输入才显示（转写走老师配的硅基流动 key）
+            const _genVoice = document.getElementById('gen-voice-row');
+            const _videoVoice = document.getElementById('video-voice-row');
+            if (_genVoice) _genVoice.style.display = capabilities.voice_input ? 'flex' : 'none';
+            if (_videoVoice) _videoVoice.style.display = capabilities.voice_input ? 'flex' : 'none';
             // 手机端「+」按钮：有任一动作可用才显示（CSS 在 ≤600px 才真正出现）
             const _actionCount = [capabilities.voice_input, capabilities.image_input,
                 capabilities.file_upload, capabilities.image_generation, capabilities.video_generation]
@@ -1199,6 +1226,17 @@
         let recStream = null, recRecorder = null, recChunks = [], recStartTs = 0, recTimer = null;
         let voiceNonce = null, bridgePopup = null;
         const defaultHint = composerHint.textContent;
+        // 录音结果的去向：null → 默认「上传+当消息发出」；否则交给该回调（弹窗转写填框场景）。
+        // activeMic / activeHint：当前反映录音状态的按钮与文案元素（默认主输入框那颗麦克风）。
+        let voiceSink = null;
+        let activeMic = btnVoice;
+        let activeHint = null;
+
+        // 录音过程中的状态文案：主输入框写 composerHint，弹窗场景额外写各自的 hint 元素
+        function voiceHint(text) {
+            composerHint.textContent = text;
+            if (activeHint) activeHint.textContent = text;
+        }
 
         function canRecordInline() {
             return window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder;
@@ -1222,21 +1260,23 @@
 
         function setVoiceState(state) {
             voiceState = state;
+            const btn = activeMic || btnVoice;
             if (state === 'recording') {
-                btnVoice.classList.add('recording');
-                btnVoice.innerHTML = '<i class="bi bi-stop-fill"></i>';
-                btnVoice.title = '停止并发送';
+                btn.classList.add('recording');
+                btn.innerHTML = '<i class="bi bi-stop-fill"></i>';
+                btn.title = '停止';
             } else {
-                btnVoice.classList.remove('recording');
-                btnVoice.innerHTML = state === 'processing'
+                btn.classList.remove('recording');
+                btn.innerHTML = state === 'processing'
                     ? '<i class="bi bi-hourglass-split"></i>'
                     : '<i class="bi bi-mic"></i>';
-                btnVoice.title = '语音输入';
-                btnVoice.disabled = (state === 'processing');
+                btn.title = '语音输入';
+                btn.disabled = (state === 'processing');
             }
             if (state === 'idle') {
                 composerHint.textContent = defaultHint;
-                btnVoice.disabled = false;
+                if (activeHint) activeHint.textContent = activeHint.dataset.default || '';
+                btn.disabled = false;
             }
         }
 
@@ -1263,7 +1303,7 @@
             setVoiceState('recording');
             recTimer = setInterval(() => {
                 const sec = (Date.now() - recStartTs) / 1000;
-                composerHint.textContent = `🔴 正在录音 ${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}（最长 60 秒，再点一下麦克风停止并发送）`;
+                voiceHint(`🔴 正在录音 ${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}（最长 60 秒，再点一下麦克风停止）`);
                 if (sec >= MAX_REC_SECONDS) stopInlineRecording();
             }, 250);
         }
@@ -1276,7 +1316,7 @@
         function stopInlineRecording() {
             if (!recRecorder || voiceState !== 'recording') return;
             setVoiceState('processing');
-            composerHint.textContent = '正在处理录音…';
+            voiceHint('正在处理录音…');
             try { recRecorder.stop(); } catch (e) { onInlineRecorderStop(); }
         }
 
@@ -1348,7 +1388,7 @@
                 voiceNonce = null;
                 fileInputAudio.click();
             } else {
-                composerHint.textContent = '🎙️ 正在小窗中录音，讲完在小窗里点停止即可自动发送';
+                voiceHint('🎙️ 正在小窗中录音，讲完在小窗里点停止');
             }
         }
 
@@ -1381,10 +1421,23 @@
             await sendAudioBlob(f, f.name);
         });
 
-        // 上传音频并立即发送（语音消息不需要再点发送按钮）
+        // 录音结束的统一出口：有 voiceSink（弹窗转写）就交给它，否则走默认「上传+发消息」
         async function sendAudioBlob(blob, fileName) {
+            if (voiceSink) {
+                const sink = voiceSink;
+                setVoiceState('processing');
+                voiceHint('正在识别语音…');
+                try { await sink(blob, fileName); }
+                catch (err) { showError('语音识别失败：' + err.message); }
+                finally {
+                    voiceSink = null;
+                    setVoiceState('idle');   // 先复位当前弹窗麦克风与它的提示文案
+                    activeMic = btnVoice; activeHint = null;
+                }
+                return;
+            }
             setVoiceState('processing');
-            composerHint.textContent = '正在上传语音…';
+            voiceHint('正在上传语音…');
             const name = fileName || ('语音_' + new Date().toTimeString().slice(0, 8).replace(/:/g, '') + '.' + (blob.type && blob.type.includes('webm') ? 'webm' : 'wav'));
             const file = (blob instanceof File) ? blob : new File([blob], name, { type: blob.type || 'audio/wav' });
             const fd = new FormData();
@@ -1409,15 +1462,54 @@
             }
         }
 
-        btnVoice.addEventListener('click', async () => {
+        // 统一的录音触发：sink 决定录音结果去向，micBtn/hintEl 决定状态反映到哪个 UI。
+        // sink 为 null → 默认发消息（受每日额度限制）；有 sink → 弹窗转写（不占额度，转写本身不发消息）。
+        async function triggerVoice(sink, micBtn, hintEl) {
             if (voiceState === 'recording') { stopInlineRecording(); return; }
             if (voiceState !== 'idle' || isStreaming) return;
-            if (dailyUsed >= dailyLimit) { showError(`今日已达上限（${dailyLimit} 条），明天再来吧`); return; }
+            if (!sink && dailyUsed >= dailyLimit) { showError(`今日已达上限（${dailyLimit} 条），明天再来吧`); return; }
+            voiceSink = sink || null;
+            activeMic = micBtn || btnVoice;
+            activeHint = hintEl || null;
             if (canRecordInline()) { startInlineRecording(); return; }
             if (!reachableBridge && voiceBridgeUrls.length) await probeBridges();
             if (reachableBridge) { openVoiceBridge(reachableBridge); return; }
             fileInputAudio.click();
-        });
+        }
+
+        btnVoice.addEventListener('click', () => triggerVoice(null, btnVoice, null));
+
+        // ===== 图片/视频生成弹窗内的语音输入：录音 → 转写 → 填进提示词框（不发消息） =====
+        function makePromptTranscriber(textarea) {
+            return async function (blob, fileName) {
+                const name = fileName || ('语音_' + Date.now() + '.' + (blob.type && blob.type.includes('webm') ? 'webm' : 'wav'));
+                const file = (blob instanceof File) ? blob : new File([blob], name, { type: blob.type || 'audio/wav' });
+                const fd = new FormData();
+                fd.append('file', file);
+                const r = await fetch(apiUrl('/transcribe'), { method: 'POST', body: fd });
+                const data = await r.json().catch(() => ({}));
+                if (!r.ok || data.code !== 200) {
+                    showError(data.message || `语音识别失败 (${r.status})`);
+                    return;
+                }
+                const text = (data.text || '').trim();
+                if (!text) { showError(data.message || '没有听清，请再试一次'); return; }
+                // 追加到已有内容后面（学生可能先打了一部分字），并把光标留在末尾
+                const cur = textarea.value.trim();
+                textarea.value = cur ? (cur + (/[。，、\s]$/.test(cur) ? '' : '，') + text) : text;
+                textarea.focus();
+                textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+            };
+        }
+
+        function wireModalMic(btnId, hintId, textareaEl) {
+            const mic = document.getElementById(btnId);
+            const hint = document.getElementById(hintId);
+            if (!mic || !textareaEl) return;
+            mic.addEventListener('click', () => triggerVoice(makePromptTranscriber(textareaEl), mic, hint));
+        }
+        wireModalMic('gen-voice', 'gen-voice-hint', genPrompt);
+        wireModalMic('video-voice', 'video-voice-hint', videoPrompt);
 
         async function sendMessage(askAi) {
             if (askAi === undefined) askAi = true;

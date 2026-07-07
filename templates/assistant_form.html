@@ -266,7 +266,8 @@
                                {% if not assistant or assistant.allow_voice_input %}checked{% endif %}>
                         <label class="form-check-label fw-semibold" for="allow_voice_input">允许学生语音输入</label>
                         <div class="form-text text-muted small">
-                            学生点麦克风按钮讲话，系统自动转成文字发给 AI（打字慢的学生友好）。
+                            学生点麦克风按钮讲话，系统自动转成文字发给 AI（打字慢的学生友好）；
+                            开启后，「AI 生成图片 / 视频」的提示词弹窗里也会出现麦克风，可语音说出想生成的画面。
                             需在「个人设置」中配置<strong>硅基流动</strong> API Key（转写用 SenseVoice，免费），与对话所用模型无关。
                         </div>
                         <div class="mt-2 ms-1" style="border-left: 3px solid #E5E0D8; padding-left: 0.75rem;">

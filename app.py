@@ -9,6 +9,7 @@ import shutil
 from functools import wraps
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 import urllib.parse
+import urllib.error
 from flask import Flask, render_template, redirect, url_for, request, flash, jsonify, make_response, send_file, send_from_directory, session, Response, abort
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Date, Boolean, ForeignKey, UniqueConstraint, LargeBinary, inspect, text, func
 from sqlalchemy.ext.declarative import declarative_base
@@ -11225,6 +11226,55 @@ def api_chat_video_task(task_id, gen_task_id):
         db.close()
 
 
+@app.route('/api/chat/<string:task_id>/transcribe', methods=['POST'])
+def api_chat_transcribe(task_id):
+    """纯语音转写：录音 → 硅基流动 SenseVoice 转文字并返回，不写消息、不进对话。
+    供「AI 生成图片 / 视频」提示词弹窗的麦克风按钮使用：转写结果填进输入框，学生可再改。
+    与「语音消息」链路（/upload + 发送）区分开：这里只要文字。"""
+    db = SessionLocal()
+    tmp_path = None
+    try:
+        assistant, conv, err = _resolve_conversation(db, task_id)
+        if err:
+            return jsonify(err), err['code']
+
+        f = request.files.get('file')
+        if not f or not (f.filename or '').strip():
+            return jsonify({'code': 400, 'message': '没有收到录音'}), 400
+        ext = _ext_of(f.filename)
+        if ext not in ALLOWED_AUDIO_EXTS:
+            return jsonify({'code': 400, 'message': f'不支持的音频格式（{ext or "未知"}）'}), 400
+
+        asr_key = _get_siliconflow_key(db, assistant)
+        if not asr_key:
+            return jsonify({'code': 403, 'message': '老师还没配置语音转写（需在个人设置中填写硅基流动 API Key）'}), 403
+
+        # 落到本会话目录的临时文件，转写完即删——转写文本不落库，音频也无需长期保留
+        conv_dir = _conv_upload_dir(conv.id)
+        tmp_path = os.path.join(conv_dir, f'asr_{uuid.uuid4().hex[:8]}.{ext}')
+        f.save(tmp_path)
+        if os.path.getsize(tmp_path) < 1024:
+            return jsonify({'code': 400, 'message': '录音太短了，请再试一次'}), 400
+
+        try:
+            text = _transcribe_audio(tmp_path, asr_key)
+        except Exception as e:
+            logger.exception(f'[提示词语音] 转写失败: {tmp_path}')
+            return jsonify({'code': 502, 'message': f'语音识别失败，请重试：{e}'}), 502
+
+        text = (text or '').strip()
+        if not text:
+            return jsonify({'code': 200, 'text': '', 'message': '没有听清，请离麦克风近一点再试一次'})
+        return jsonify({'code': 200, 'text': text})
+    finally:
+        if tmp_path:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+        db.close()
+
+
 def _validate_and_load_attachments(conv, image_paths, file_paths):
     """校验前端传来的附件路径（必须是本会话目录），返回 (valid_image_paths, valid_file_paths, file_text_blocks)"""
     valid_images = []
@@ -11605,6 +11655,280 @@ def api_chat_rate(task_id):
         return jsonify({'code': 200, 'rating': msg.rating})
     finally:
         db.close()
+
+
+# ============================================================
+# 在线自动更新（v2.2.0）
+# 路线：检查更新源 version.json → 下载校验(sha256) → 解压暂存 → 管理员点应用
+#       → 按数据白名单「选择性覆盖」代码文件（绝不动 DB / 附件 / .env / 内置 Python）
+#       → 写重启哨兵 + 退出，由 GUI 启动器自动重新拉起（免安装包场景）。
+# 与新版信息科技平台不同：OpenMentor 免安装包是扁平目录（代码与数据同层），
+# 不能整目录 swap，只能 overlay-only + 排除数据路径。数据/代码边界即 .gitignore。
+# ============================================================
+
+# 由 GUI 启动器（gui_launcher.py）注入，标记「本进程受托管、可一键重启升级」。
+# 开发时直接 python app.py 不带此标记 → apply 仅演练不落地。
+OM_MANAGED = (os.getenv('OM_MANAGED_LAUNCHER') or '').strip() == '1'
+# 更新源根地址（按 edition 分子目录）。开源版默认留空 = 不启用在线更新；
+# 自托管可设环境变量 OM_UPDATE_URL 指向自己的更新源（内含 personal/campus 两个 version.json）。
+OM_UPDATE_BASE = (os.getenv('OM_UPDATE_URL') or '').rstrip('/')
+
+# 下载/解压进度（单机单管理员场景，模块级状态足够）
+_UPDATE_STATE = {'state': 'idle', 'pct': 0, 'msg': '', 'info': None}
+
+# 更新时「绝不覆盖、绝不删除」的数据路径（相对安装根，正斜杠前缀匹配）。
+# 与 .gitignore 的用户数据集合一致：DB / 附件 / 报告 / 语音缓存 / 密钥 / 内置运行时 / 备份。
+UPDATE_DATA_EXCLUDE = (
+    'openmentor.db', 'openmentor.db-journal', 'openmentor.db-wal', 'openmentor.db-shm',
+    '.env', '.env.local',
+    '.cert/', 'env/', '.venv', '.venv.nosync', '.venv.icloud-old',
+    'backups/', 'data/',
+    'static/uploads/', 'static/reports/', 'static/tts_cache/',
+    '.git/',
+)
+
+
+def _update_root():
+    """安装根目录（app.py 所在目录）。"""
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def _update_channel():
+    return 'campus' if is_campus_edition() else 'personal'
+
+
+def _update_manifest_url():
+    return f"{OM_UPDATE_BASE}/{_update_channel()}/version.json"
+
+
+def _ver_tuple(v):
+    try:
+        return tuple(int(x) for x in str(v).strip().split('.'))
+    except Exception:
+        return (0,)
+
+
+def _update_fetch_json(url):
+    import urllib.request
+    req = urllib.request.Request(url, headers={'User-Agent': 'openmentor-updater'})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return json.loads(r.read().decode('utf-8'))
+
+
+def _is_update_excluded(rel):
+    """rel（相对安装根）是否属于「绝不动」的数据路径。"""
+    rel = rel.replace('\\', '/').lstrip('/')
+    if not rel:
+        return True
+    for pref in UPDATE_DATA_EXCLUDE:
+        if pref.endswith('/'):
+            if rel == pref[:-1] or rel.startswith(pref):
+                return True
+        elif rel == pref:
+            return True
+    # 任意层级的字节码 / 系统垃圾一律不覆盖
+    if rel.endswith('.pyc') or '/__pycache__/' in ('/' + rel) or rel.startswith('__pycache__/'):
+        return True
+    if rel.endswith('/.DS_Store') or rel == '.DS_Store':
+        return True
+    return False
+
+
+def _update_staging_dir():
+    return os.path.join(_update_root(), 'backups', 'update_staging', 'app_new')
+
+
+def _update_download_job(base, info):
+    """后台线程：下载 → sha256 校验 → 解压到暂存 → 校验结构。"""
+    import hashlib
+    import zipfile
+    import urllib.request
+    try:
+        _UPDATE_STATE.update(state='downloading', pct=0, msg='正在下载更新包…')
+        zip_name = info['zip']
+        url = zip_name if zip_name.startswith('http') else f"{base}/{_update_channel()}/{zip_name}"
+        tmp_dir = os.path.join(_update_root(), 'backups', 'update_staging')
+        os.makedirs(tmp_dir, exist_ok=True)
+        tmp_zip = os.path.join(tmp_dir, 'pending.zip')
+        req = urllib.request.Request(url, headers={'User-Agent': 'openmentor-updater'})
+        h = hashlib.sha256()
+        with urllib.request.urlopen(req, timeout=30) as r, open(tmp_zip, 'wb') as f:
+            total = int(r.headers.get('Content-Length') or info.get('size') or 0)
+            done = 0
+            while True:
+                chunk = r.read(65536)
+                if not chunk:
+                    break
+                f.write(chunk)
+                h.update(chunk)
+                done += len(chunk)
+                if total:
+                    _UPDATE_STATE['pct'] = int(done * 88 / total)
+        want = str(info.get('sha256', '')).lower()
+        if want and h.hexdigest().lower() != want:
+            raise RuntimeError('更新包校验失败（sha256 不符），已放弃，未改动任何文件')
+        _UPDATE_STATE.update(pct=92, msg='正在解压…')
+        staging = _update_staging_dir()
+        if os.path.exists(staging):
+            shutil.rmtree(staging)
+        os.makedirs(staging)
+        with zipfile.ZipFile(tmp_zip) as z:
+            for n in z.namelist():                       # 防路径穿越
+                if n.startswith('/') or '..' in n.replace('\\', '/').split('/'):
+                    raise RuntimeError(f'更新包含非法路径：{n}')
+            z.extractall(staging)
+        if not os.path.exists(os.path.join(staging, 'app.py')):
+            raise RuntimeError('更新包结构不对（缺 app.py），已放弃')
+        got_ver = '?'
+        cl = os.path.join(staging, 'CHANGELOG.md')
+        if os.path.exists(cl):
+            try:
+                with open(cl, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        m = re.match(r'^##\s*\[(\d+\.\d+\.\d+)\]', line.strip())
+                        if m:
+                            got_ver = m.group(1)
+                            break
+            except Exception:
+                pass
+        try:
+            os.remove(tmp_zip)
+        except OSError:
+            pass
+        _UPDATE_STATE.update(state='ready', pct=100,
+                             msg=f'新版 {got_ver} 已就绪，点「应用更新并重启」完成升级')
+    except RuntimeError as e:
+        # 自己抛的（sha256/结构/路径）——文案安全，可直接回显
+        logger.exception('[自动更新] 下载/解压失败')
+        _UPDATE_STATE.update(state='error', msg=str(e)[:200])
+    except Exception:
+        # 网络等异常详情里可能带更新源主机名/IP，不回显
+        logger.exception('[自动更新] 下载/解压失败')
+        _UPDATE_STATE.update(state='error', msg='下载更新失败，请检查网络后重试。')
+
+
+def _apply_update_overlay():
+    """把暂存的新版按白名单覆盖到安装目录；覆盖前把被替换文件快照到 backups/ 可回滚。
+    返回 (ok, msg)。绝不触碰数据路径。"""
+    root = _update_root()
+    staging = _update_staging_dir()
+    if not os.path.exists(os.path.join(staging, 'app.py')):
+        return False, '没有已就绪的新版，请先下载'
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    rollback = os.path.join(root, 'backups', f'update_rollback_{ts}')
+    replaced = 0
+    snapshot = 0
+    for dirpath, dirnames, filenames in os.walk(staging):
+        for fn in filenames:
+            src = os.path.join(dirpath, fn)
+            rel = os.path.relpath(src, staging)
+            if _is_update_excluded(rel):
+                continue
+            dst = os.path.join(root, rel)
+            if os.path.exists(dst):
+                snap = os.path.join(rollback, rel)
+                os.makedirs(os.path.dirname(snap), exist_ok=True)
+                try:
+                    shutil.copy2(dst, snap)
+                    snapshot += 1
+                except OSError:
+                    pass
+            os.makedirs(os.path.dirname(dst) or root, exist_ok=True)
+            shutil.copy2(src, dst)
+            replaced += 1
+    # 清掉根目录旧字节码，确保下次启动加载新 app.py（.py 比 .pyc 新时本会重编，这里稳妥起见直接清）
+    shutil.rmtree(os.path.join(root, '__pycache__'), ignore_errors=True)
+    rel_rb = os.path.relpath(rollback, root) if snapshot else '（无旧文件需备份）'
+    return True, f'已更新 {replaced} 个文件，旧版 {snapshot} 个已备份到 {rel_rb}'
+
+
+def _schedule_self_restart(delay=1.2):
+    """写重启哨兵后退出；GUI 启动器检测到子进程退出且哨兵存在 → 自动重新拉起。"""
+    sentinel = os.path.join(_update_root(), 'backups', '.om_restart_pending')
+    try:
+        os.makedirs(os.path.dirname(sentinel), exist_ok=True)
+        with open(sentinel, 'w', encoding='utf-8') as f:
+            f.write(datetime.now().isoformat())
+    except OSError:
+        pass
+    threading.Timer(delay, lambda: os._exit(0)).start()
+
+
+@app.route('/api/update/status')
+def api_update_status():
+    if not is_admin_user(current_user):
+        abort(403)
+    ready = os.path.exists(os.path.join(_update_staging_dir(), 'app.py'))
+    # 不下发更新源地址（避免在前端/审查里暴露服务器 IP）
+    return jsonify({
+        'version': _parse_latest_version_from_changelog(),
+        'managed': OM_MANAGED,
+        'channel': _update_channel(),
+        'pending': ready,
+        'state': _UPDATE_STATE['state'], 'pct': _UPDATE_STATE['pct'], 'msg': _UPDATE_STATE['msg'],
+    })
+
+
+@app.route('/api/update/check', methods=['POST'])
+def api_update_check():
+    if not is_admin_user(current_user):
+        abort(403)
+    try:
+        info = _update_fetch_json(_update_manifest_url())
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return jsonify({'ok': False, 'msg': '暂时没有检测到可用的新版本（更新源未就绪）。'})
+        return jsonify({'ok': False, 'msg': f'检查更新失败（服务器返回 {e.code}），请稍后再试。'})
+    except Exception:
+        # 不回显异常详情：urlopen 错误里会带更新源主机名/IP
+        logger.warning('[自动更新] 检查更新连接失败', exc_info=True)
+        return jsonify({'ok': False, 'msg': '无法连接更新服务器，请检查网络后重试。'})
+    current = _parse_latest_version_from_changelog()
+    latest = str(info.get('version', ''))
+    newer = _ver_tuple(latest) > _ver_tuple(current)
+    _UPDATE_STATE['info'] = info if newer else None
+    return jsonify({'ok': True, 'newer': newer, 'current': current, 'latest': latest,
+                    'notes': info.get('notes', ''), 'size': info.get('size', 0)})
+
+
+@app.route('/api/update/download', methods=['POST'])
+def api_update_download():
+    if not is_admin_user(current_user):
+        abort(403)
+    if _UPDATE_STATE['state'] == 'downloading':
+        return jsonify({'ok': True})
+    info = _UPDATE_STATE.get('info')
+    if not info:
+        return jsonify({'ok': False, 'msg': '请先检查更新'})
+    threading.Thread(target=_update_download_job, args=(OM_UPDATE_BASE, info), daemon=True).start()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/update/progress')
+def api_update_progress():
+    if not is_admin_user(current_user):
+        abort(403)
+    return jsonify({k: _UPDATE_STATE[k] for k in ('state', 'pct', 'msg')})
+
+
+@app.route('/api/update/apply', methods=['POST'])
+def api_update_apply():
+    if not is_admin_user(current_user):
+        abort(403)
+    if not os.path.exists(os.path.join(_update_staging_dir(), 'app.py')):
+        return jsonify({'ok': False, 'msg': '没有已就绪的新版，请先下载'})
+    if not OM_MANAGED:
+        return jsonify({'ok': False, 'msg': '开发/源码模式不执行落地升级（仅免安装包由启动器托管时支持一键重启升级）。'
+                                           '更新包已下载在 backups/update_staging/app_new，可手动覆盖代码文件。'})
+    try:
+        ok, msg = _apply_update_overlay()
+    except Exception as e:
+        logger.exception('[自动更新] 应用失败')
+        return jsonify({'ok': False, 'msg': f'应用更新失败：{str(e)[:160]}'})
+    if not ok:
+        return jsonify({'ok': False, 'msg': msg})
+    _schedule_self_restart()
+    return jsonify({'ok': True, 'msg': '正在重启升级，约 10 秒后自动刷新页面。', 'detail': msg})
 
 
 # ============================================================
